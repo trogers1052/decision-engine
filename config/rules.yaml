@@ -1,0 +1,128 @@
+# =============================================================================
+# Decision Engine - Rule Configuration
+# =============================================================================
+#
+# Your Trading Philosophy: "Buy dips in uptrending stocks"
+# - Required: Weekly uptrend (SMA_20 > SMA_50)
+# - Preferred: Monthly uptrend (SMA_50 > SMA_200)
+# - Entry: When RSI dips to 35-40 range but trend intact
+#
+# =============================================================================
+
+service:
+  name: decision-engine
+  version: "1.0.0"
+
+# -----------------------------------------------------------------------------
+# Your Core Strategy Rules
+# -----------------------------------------------------------------------------
+rules:
+  # PRIMARY RULE: Buy dips in uptrending stocks
+  buy_dip_in_uptrend:
+    enabled: true
+    description: "Buy when RSI < 40 AND weekly uptrend intact (SMA_20 > SMA_50)"
+    rsi_threshold: 40.0
+    weight: 1.5  # Higher weight - this is your main strategy
+
+  # STRONG BUY: Dip in confirmed long-term uptrend
+  strong_buy_signal:
+    enabled: true
+    description: "Buy when RSI < 35 AND full trend alignment (SMA_20 > SMA_50 > SMA_200)"
+    rsi_threshold: 35.0
+    weight: 2.0  # Highest weight - best opportunities
+
+  # Weekly Uptrend Check
+  weekly_uptrend:
+    enabled: true
+    description: "Stock trending up over past week"
+    weight: 1.0
+
+  # Monthly Uptrend Check
+  monthly_uptrend:
+    enabled: true
+    description: "Stock trending up over past month"
+    weight: 0.8  # Flexible - nice to have
+
+# -----------------------------------------------------------------------------
+# Supporting Indicator Rules
+# -----------------------------------------------------------------------------
+  # RSI Rules
+  rsi_oversold:
+    enabled: true
+    description: "Classic oversold condition"
+    threshold: 30.0
+    extreme_threshold: 20.0
+    weight: 1.0
+
+  rsi_overbought:
+    enabled: true
+    description: "Classic overbought - potential exit"
+    threshold: 70.0
+    extreme_threshold: 80.0
+    weight: 1.0
+
+  # MACD Rules
+  macd_bullish_crossover:
+    enabled: true
+    description: "MACD crosses above signal line"
+    weight: 1.0
+
+  macd_bearish_crossover:
+    enabled: true
+    description: "MACD crosses below signal line"
+    weight: 1.0
+
+  # Trend Rules
+  trend_alignment:
+    enabled: true
+    description: "Full bullish alignment: SMA_20 > SMA_50 > SMA_200"
+    weight: 1.2
+
+  trend_break_warning:
+    enabled: true
+    description: "SMA_20 crosses below SMA_50 - uptrend may be ending"
+    weight: 1.0
+
+# -----------------------------------------------------------------------------
+# Signal Aggregation
+# -----------------------------------------------------------------------------
+aggregation:
+  method: "consensus_boost"  # Boost confidence when multiple rules agree
+  min_confidence: 0.5
+  require_consensus: false
+  consensus_min_rules: 2
+
+# -----------------------------------------------------------------------------
+# Ranking Configuration (Which stock to buy first?)
+# -----------------------------------------------------------------------------
+ranking:
+  criteria: "composite"
+  weights:
+    dip_depth: 0.30      # Lower RSI = better entry
+    trend_strength: 0.30  # Full SMA alignment preferred
+    confidence: 0.25      # How many rules triggered
+    volatility: 0.15      # Based on ATR
+
+  # How often to publish rankings
+  publish_interval_seconds: 60
+
+  # Only rank if at least this many symbols have signals
+  min_symbols_for_ranking: 2
+
+# -----------------------------------------------------------------------------
+# Output Configuration
+# -----------------------------------------------------------------------------
+output:
+  # Publish individual symbol decisions
+  publish_decisions: true
+  decision_topic: "trading.decisions"
+
+  # Publish cross-symbol rankings
+  publish_rankings: true
+  ranking_topic: "trading.rankings"
+
+  # Debounce to avoid flooding (seconds)
+  debounce_seconds: 5
+
+  # Only publish signals above this confidence
+  min_publish_confidence: 0.5

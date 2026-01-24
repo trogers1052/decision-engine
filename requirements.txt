@@ -1,0 +1,20 @@
+# Decision Engine Dependencies
+
+# Kafka
+kafka-python>=2.0.0
+
+# Configuration
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0
+PyYAML>=6.0.0
+
+# Redis (for state persistence)
+redis>=5.0.0
+
+# Database (optional, for decision logging)
+psycopg2-binary>=2.9.0
+
+# Testing
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
