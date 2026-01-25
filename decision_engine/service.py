@@ -10,6 +10,7 @@ from .config import Settings
 from .kafka_consumer import IndicatorConsumer
 from .kafka_producer import DecisionProducer
 from .state_manager import StateManager
+from .position_tracker import PositionTracker
 from .ranker import SymbolRanker, RankingCriteria
 from .rules.base import Rule, SymbolContext, SignalType
 from .rules.registry import RuleRegistry
@@ -36,6 +37,7 @@ class DecisionEngineService:
         self.consumer: Optional[IndicatorConsumer] = None
         self.producer: Optional[DecisionProducer] = None
         self.state_manager: StateManager = StateManager()
+        self.position_tracker: Optional[PositionTracker] = None
         self.ranker: SymbolRanker = SymbolRanker(RankingCriteria.COMPOSITE)
 
         # Rules loaded from config
@@ -76,6 +78,20 @@ class DecisionEngineService:
             if not self.producer.connect():
                 logger.error("Failed to connect to Kafka producer")
                 return False
+
+            # Initialize position tracker (for average_down rule)
+            self.position_tracker = PositionTracker(
+                brokers=self.settings.kafka_broker_list,
+                topic=getattr(self.settings, 'kafka_orders_topic', 'trading.orders'),
+                consumer_group=f"{self.settings.kafka_consumer_group}-positions",
+                on_position_open=self._on_position_open,
+                on_position_close=self._on_position_close,
+                on_scale_in=self._on_scale_in,
+            )
+            if self.position_tracker.connect():
+                logger.info("Position tracker connected to trading.orders")
+            else:
+                logger.warning("Position tracker failed to connect - average_down will not work")
 
             logger.info(f"Decision engine initialized with {len(self.rules)} rules")
             for rule in self.rules:
@@ -149,6 +165,10 @@ class DecisionEngineService:
 
         # Build context
         state = self.state_manager.get_state(symbol)
+
+        # Get position metadata for average_down rule
+        position_metadata = self.state_manager.get_position_metadata(symbol)
+
         context = SymbolContext(
             symbol=symbol,
             indicators=indicators,
@@ -156,6 +176,7 @@ class DecisionEngineService:
             data_quality=data_quality,
             previous_signals=state.signal_history.get_recent_signals(10),
             current_position=state.position_side,
+            metadata=position_metadata,
         )
 
         # Evaluate each rule
@@ -285,6 +306,35 @@ class DecisionEngineService:
             f"{summary['watch_signals']} WATCH across {summary['total_symbols']} symbols"
         )
 
+    # =========================================================================
+    # Position Tracking Callbacks
+    # =========================================================================
+
+    def _on_position_open(
+        self,
+        symbol: str,
+        price: float,
+        shares: float,
+        timestamp: Optional[datetime],
+    ):
+        """Called when a new position is opened."""
+        self.state_manager.open_position(symbol, price, shares, timestamp)
+        logger.info(f"Position tracking: opened {symbol} @ ${price:.2f}")
+
+    def _on_position_close(self, symbol: str):
+        """Called when a position is closed."""
+        self.state_manager.close_position(symbol)
+        logger.info(f"Position tracking: closed {symbol}")
+
+    def _on_scale_in(self, symbol: str, price: float, shares: float):
+        """Called when scaling into a position."""
+        self.state_manager.add_to_position(symbol, price, shares)
+        logger.info(f"Position tracking: scale-in {symbol} +{shares} @ ${price:.2f}")
+
+    # =========================================================================
+    # Service Lifecycle
+    # =========================================================================
+
     def start(self):
         """Start the service."""
         logger.info("=" * 60)
@@ -295,7 +345,12 @@ class DecisionEngineService:
         logger.info(f"Publishing rankings to: {self.settings.kafka_ranking_topic}")
         logger.info(f"Min confidence to publish: {self.settings.min_publish_confidence}")
         logger.info(f"Ranking interval: {self.settings.ranking_interval_seconds}s")
+        logger.info(f"Position tracking: enabled (listening to trading.orders)")
         logger.info("=" * 60)
+
+        # Start position tracker first
+        if self.position_tracker:
+            self.position_tracker.start()
 
         self.consumer.start()
 
@@ -303,6 +358,8 @@ class DecisionEngineService:
         """Graceful shutdown."""
         logger.info("Shutting down decision engine...")
 
+        if self.position_tracker:
+            self.position_tracker.stop()
         if self.consumer:
             self.consumer.close()
         if self.producer:

@@ -28,6 +28,13 @@ from .enhanced_rules import (
     TrendContinuationRule,
     AverageDownRule,
 )
+from .mining_rules import (
+    CommodityBreakoutRule,
+    MinerMetalRatioRule,
+    DollarWeaknessRule,
+    SeasonalityRule,
+    VolumeBreakoutRule,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +70,13 @@ RULE_REGISTRY: Dict[str, Type[Rule]] = {
     "momentum_reversal": MomentumReversalRule,
     "trend_continuation": TrendContinuationRule,
     "average_down": AverageDownRule,
+
+    # Mining Stock Rules
+    "commodity_breakout": CommodityBreakoutRule,
+    "miner_metal_ratio": MinerMetalRatioRule,
+    "dollar_weakness": DollarWeaknessRule,
+    "seasonality": SeasonalityRule,
+    "volume_breakout": VolumeBreakoutRule,
 }
 
 
@@ -147,6 +161,22 @@ class RuleRegistry:
                 params["max_scale_ins"] = config["max_scale_ins"]
             if "min_drop_from_entry_pct" in config:
                 params["min_drop_from_entry_pct"] = config["min_drop_from_entry_pct"]
+
+            # Mining Rules parameters
+            if "breakout_threshold_pct" in config:
+                params["breakout_threshold_pct"] = config["breakout_threshold_pct"]
+            if "min_trend_strength" in config:
+                params["min_trend_strength"] = config["min_trend_strength"]
+            if "support_tolerance_pct" in config:
+                params["support_tolerance_pct"] = config["support_tolerance_pct"]
+            if "require_macd_positive" in config:
+                params["require_macd_positive"] = config["require_macd_positive"]
+            if "strong_month_boost" in config:
+                params["strong_month_boost"] = config["strong_month_boost"]
+            if "weak_month_penalty" in config:
+                params["weak_month_penalty"] = config["weak_month_penalty"]
+            if "min_volume_ratio" in config:
+                params["min_volume_ratio"] = config["min_volume_ratio"]
 
             # Create the rule with extracted params
             rule = rule_class(**params) if params else rule_class()
