@@ -26,6 +26,7 @@ from .enhanced_rules import (
     EnhancedBuyDipRule,
     MomentumReversalRule,
     TrendContinuationRule,
+    AverageDownRule,
 )
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,7 @@ RULE_REGISTRY: Dict[str, Type[Rule]] = {
     "enhanced_buy_dip": EnhancedBuyDipRule,
     "momentum_reversal": MomentumReversalRule,
     "trend_continuation": TrendContinuationRule,
+    "average_down": AverageDownRule,
 }
 
 
@@ -139,6 +141,12 @@ class RuleRegistry:
             # Trend Continuation parameters
             if "pullback_tolerance_pct" in config:
                 params["pullback_tolerance_pct"] = config["pullback_tolerance_pct"]
+
+            # Average Down parameters
+            if "max_scale_ins" in config:
+                params["max_scale_ins"] = config["max_scale_ins"]
+            if "min_drop_from_entry_pct" in config:
+                params["min_drop_from_entry_pct"] = config["min_drop_from_entry_pct"]
 
             # Create the rule with extracted params
             rule = rule_class(**params) if params else rule_class()

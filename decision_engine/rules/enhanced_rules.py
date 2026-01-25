@@ -290,6 +290,144 @@ class MomentumReversalRule(Rule):
         )
 
 
+class AverageDownRule(Rule):
+    """
+    Scale into existing position when dip goes deeper.
+
+    Key safeguards:
+    1. Only triggers when ALREADY in a position
+    2. RSI must be MORE oversold than initial entry (deeper dip)
+    3. Trend must still be intact (SMA_20 > SMA_50)
+    4. Price must still be above SMA_200 (not a breakdown)
+    5. Limited number of scale-ins to prevent over-concentration
+
+    Natural Language:
+    "If already long and RSI drops to extreme oversold (<30) while
+     trend is still intact, add to position to average down"
+    """
+
+    def __init__(
+        self,
+        rsi_extreme: float = 30.0,       # Must be deeply oversold
+        max_scale_ins: int = 2,           # Max times to average down
+        min_drop_from_entry_pct: float = 3.0,  # Must be 3%+ below entry
+    ):
+        self.rsi_extreme = rsi_extreme
+        self.max_scale_ins = max_scale_ins
+        self.min_drop_from_entry_pct = min_drop_from_entry_pct
+
+    @property
+    def name(self) -> str:
+        return "Average Down"
+
+    @property
+    def description(self) -> str:
+        return (
+            f"Add to position when RSI < {self.rsi_extreme} and price dropped "
+            f">{self.min_drop_from_entry_pct}% from entry, trend intact"
+        )
+
+    @property
+    def required_indicators(self) -> list:
+        return ["RSI_14", "SMA_20", "SMA_50", "SMA_200", "close"]
+
+    def evaluate(self, context: SymbolContext) -> RuleResult:
+        # This rule ONLY triggers when already in a position
+        if context.current_position != "long":
+            return RuleResult(
+                triggered=False,
+                reasoning="No position - average down only applies to existing longs"
+            )
+
+        rsi = context.get_indicator("RSI_14")
+        sma20 = context.get_indicator("SMA_20")
+        sma50 = context.get_indicator("SMA_50")
+        sma200 = context.get_indicator("SMA_200")
+        close = context.get_indicator("close")
+
+        # Check scale-in count from context metadata
+        scale_ins = context.metadata.get("scale_in_count", 0) if context.metadata else 0
+        if scale_ins >= self.max_scale_ins:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"Max scale-ins reached ({scale_ins}/{self.max_scale_ins})"
+            )
+
+        # Trend must still be intact
+        if sma20 <= sma50:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"Trend broken: SMA_20 ({sma20:.2f}) <= SMA_50 ({sma50:.2f}). No averaging down."
+            )
+
+        # Price must be above SMA_200 (long-term support)
+        if close < sma200:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"Price ${close:.2f} below SMA_200 ${sma200:.2f} - breakdown risk, don't add"
+            )
+
+        # RSI must be deeply oversold
+        if rsi >= self.rsi_extreme:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"RSI {rsi:.1f} not extreme enough (need < {self.rsi_extreme})"
+            )
+
+        # Check if price dropped enough from entry
+        entry_price = context.metadata.get("entry_price") if context.metadata else None
+        if entry_price:
+            drop_pct = (entry_price - close) / entry_price * 100
+            if drop_pct < self.min_drop_from_entry_pct:
+                return RuleResult(
+                    triggered=False,
+                    reasoning=f"Price only {drop_pct:.1f}% below entry (need {self.min_drop_from_entry_pct}%+)"
+                )
+        else:
+            # No entry price available, use a default check
+            drop_pct = 0
+
+        # Calculate confidence based on how oversold and trend strength
+        base_confidence = 0.60
+
+        # Deeper RSI = higher confidence
+        if rsi < 25:
+            base_confidence += 0.15
+        elif rsi < 28:
+            base_confidence += 0.10
+
+        # Stronger trend = safer to average down
+        trend_spread = (sma20 - sma50) / sma50 * 100
+        if trend_spread > 3.0:
+            base_confidence += 0.10
+        elif trend_spread > 2.0:
+            base_confidence += 0.05
+
+        # Full alignment bonus
+        if sma50 > sma200:
+            base_confidence += 0.05
+
+        confidence = min(base_confidence, 0.85)
+
+        return RuleResult(
+            triggered=True,
+            signal=SignalType.BUY,
+            confidence=confidence,
+            reasoning=(
+                f"AVERAGE DOWN: RSI extreme ({rsi:.1f}), price {drop_pct:.1f}% below entry, "
+                f"trend intact (spread {trend_spread:.1f}%). Scale-in #{scale_ins + 1}"
+            ),
+            contributing_factors={
+                "RSI_14": round(rsi, 1),
+                "drop_from_entry_pct": round(drop_pct, 2),
+                "trend_spread_pct": round(trend_spread, 2),
+                "scale_in_number": scale_ins + 1,
+                "price": round(close, 2),
+                "sma200": round(sma200, 2),
+            }
+        )
+
+
 class TrendContinuationRule(Rule):
     """
     Buy pullbacks in established trends.

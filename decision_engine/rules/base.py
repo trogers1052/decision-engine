@@ -63,6 +63,9 @@ class SymbolContext:
     bars_since_last_signal: int = 0
     current_position: Optional[str] = None  # 'long', 'short', None
 
+    # Position metadata (for scale-in rules)
+    metadata: Optional[Dict[str, Any]] = None
+
     def get_indicator(self, name: str, default: float = 0.0) -> float:
         """Safely get an indicator value."""
         return self.indicators.get(name, default)
