@@ -22,6 +22,11 @@ from .composite_rules import (
     RSIAndMACDConfluenceRule,
     TrendDipRecoveryRule,
 )
+from .enhanced_rules import (
+    EnhancedBuyDipRule,
+    MomentumReversalRule,
+    TrendContinuationRule,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +56,11 @@ RULE_REGISTRY: Dict[str, Type[Rule]] = {
     "strong_buy_signal": StrongBuySignalRule,
     "rsi_macd_confluence": RSIAndMACDConfluenceRule,
     "dip_recovery": TrendDipRecoveryRule,
+
+    # Enhanced Rules (Quantitative Improvements)
+    "enhanced_buy_dip": EnhancedBuyDipRule,
+    "momentum_reversal": MomentumReversalRule,
+    "trend_continuation": TrendContinuationRule,
 }
 
 
@@ -109,6 +119,26 @@ class RuleRegistry:
             # MACD rules
             if "histogram_threshold" in config:
                 params["histogram_threshold"] = config["histogram_threshold"]
+
+            # Enhanced Buy Dip parameters
+            if "rsi_oversold" in config:
+                params["rsi_oversold"] = config["rsi_oversold"]
+            if "rsi_extreme" in config:
+                params["rsi_extreme"] = config["rsi_extreme"]
+            if "min_trend_spread" in config:
+                params["min_trend_spread"] = config["min_trend_spread"]
+            if "require_volume_confirm" in config:
+                params["require_volume_confirm"] = config["require_volume_confirm"]
+
+            # Momentum Reversal parameters
+            if "rsi_recovery_min" in config:
+                params["rsi_recovery_min"] = config["rsi_recovery_min"]
+            if "rsi_recovery_max" in config:
+                params["rsi_recovery_max"] = config["rsi_recovery_max"]
+
+            # Trend Continuation parameters
+            if "pullback_tolerance_pct" in config:
+                params["pullback_tolerance_pct"] = config["pullback_tolerance_pct"]
 
             # Create the rule with extracted params
             rule = rule_class(**params) if params else rule_class()
