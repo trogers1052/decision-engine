@@ -308,9 +308,9 @@ class AverageDownRule(Rule):
 
     def __init__(
         self,
-        rsi_extreme: float = 30.0,       # Must be deeply oversold
+        rsi_extreme: float = 35.0,       # Oversold threshold (relaxed from 30)
         max_scale_ins: int = 2,           # Max times to average down
-        min_drop_from_entry_pct: float = 3.0,  # Must be 3%+ below entry
+        min_drop_from_entry_pct: float = 2.0,  # Must be 2%+ below entry (relaxed from 3%)
     ):
         self.rsi_extreme = rsi_extreme
         self.max_scale_ins = max_scale_ins
