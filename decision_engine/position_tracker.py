@@ -9,9 +9,10 @@ import json
 import logging
 import threading
 from datetime import datetime
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 
-from confluent_kafka import Consumer, KafkaError, KafkaException
+from kafka import KafkaConsumer
+from kafka.errors import KafkaError
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ class PositionTracker:
 
     def __init__(
         self,
-        brokers: str,
+        brokers: List[str],
         topic: str = "trading.orders",
         consumer_group: str = "decision-engine-positions",
         on_position_open: Optional[Callable] = None,
@@ -45,7 +46,7 @@ class PositionTracker:
         self.brokers = brokers
         self.topic = topic
         self.consumer_group = consumer_group
-        self.consumer: Optional[Consumer] = None
+        self.consumer: Optional[KafkaConsumer] = None
         self._running = False
         self._thread: Optional[threading.Thread] = None
 
@@ -60,16 +61,20 @@ class PositionTracker:
     def connect(self) -> bool:
         """Connect to Kafka."""
         try:
-            config = {
-                "bootstrap.servers": self.brokers,
-                "group.id": self.consumer_group,
-                "auto.offset.reset": "latest",
-                "enable.auto.commit": True,
-            }
-            self.consumer = Consumer(config)
-            self.consumer.subscribe([self.topic])
+            self.consumer = KafkaConsumer(
+                self.topic,
+                bootstrap_servers=self.brokers,
+                group_id=self.consumer_group,
+                auto_offset_reset="latest",
+                enable_auto_commit=True,
+                value_deserializer=lambda m: m,  # Keep as bytes, decode in handler
+                consumer_timeout_ms=1000,  # 1 second poll timeout
+            )
             logger.info(f"PositionTracker connected, subscribed to {self.topic}")
             return True
+        except KafkaError as e:
+            logger.error(f"Failed to connect PositionTracker: {e}")
+            return False
         except Exception as e:
             logger.error(f"Failed to connect PositionTracker: {e}")
             return False
@@ -97,21 +102,17 @@ class PositionTracker:
         """Main consume loop."""
         while self._running:
             try:
-                msg = self.consumer.poll(timeout=1.0)
-
-                if msg is None:
-                    continue
-
-                if msg.error():
-                    if msg.error().code() == KafkaError._PARTITION_EOF:
-                        continue
-                    logger.error(f"Kafka error: {msg.error()}")
-                    continue
-
-                self._handle_message(msg.value())
-
+                # Poll for messages (with timeout from consumer_timeout_ms)
+                for message in self.consumer:
+                    if not self._running:
+                        break
+                    self._handle_message(message.value)
+            except StopIteration:
+                # No messages, continue polling
+                continue
             except Exception as e:
-                logger.error(f"Error in position tracker loop: {e}")
+                if self._running:
+                    logger.error(f"Error in position tracker loop: {e}")
 
     def _handle_message(self, raw_msg: bytes):
         """Handle incoming order message."""
