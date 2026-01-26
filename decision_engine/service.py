@@ -26,7 +26,7 @@ class DecisionEngineService:
     Flow:
     1. Consume indicator events from Kafka (stock.indicators)
     2. Update state for the symbol
-    3. Evaluate all enabled rules
+    3. Evaluate all enabled rules (or symbol-specific rules if configured)
     4. Aggregate signals with confidence
     5. Publish decision events (trading.decisions)
     6. Periodically publish rankings (trading.rankings)
@@ -40,9 +40,15 @@ class DecisionEngineService:
         self.position_tracker: Optional[PositionTracker] = None
         self.ranker: SymbolRanker = SymbolRanker(RankingCriteria.COMPOSITE)
 
-        # Rules loaded from config
+        # Rules loaded from config (default rules)
         self.rules: List[Rule] = []
         self.rule_weights: Dict[str, float] = {}
+
+        # Symbol-specific rules cache
+        self._symbol_rules: Dict[str, List[Rule]] = {}
+        self._symbol_weights: Dict[str, Dict[str, float]] = {}
+        self._symbol_exit_strategies: Dict[str, dict] = {}
+        self._config: dict = {}  # Full config for symbol override lookups
 
         # Debouncing
         self._last_publish: Dict[str, datetime] = {}
@@ -52,11 +58,18 @@ class DecisionEngineService:
         """Initialize all connections and load rules."""
         try:
             # Load rules configuration
-            config = self.settings.load_rules_config()
-            self.rules, self.rule_weights = RuleRegistry.load_rules_from_config(config)
+            self._config = self.settings.load_rules_config()
+            self.rules, self.rule_weights = RuleRegistry.load_rules_from_config(self._config)
 
             if not self.rules:
                 logger.warning("No rules loaded! Check your configuration.")
+
+            # Log symbol overrides
+            symbol_overrides = RuleRegistry.get_symbol_overrides(self._config)
+            if symbol_overrides:
+                logger.info(f"Symbol-specific rules configured for: {list(symbol_overrides.keys())}")
+                for symbol, rule_names in symbol_overrides.items():
+                    logger.info(f"  {symbol}: {', '.join(rule_names)}")
 
             # Initialize Kafka consumer
             self.consumer = IndicatorConsumer(
@@ -154,6 +167,32 @@ class DecisionEngineService:
         except Exception as e:
             logger.error(f"Error handling indicator event: {e}", exc_info=True)
 
+    def _get_rules_for_symbol(self, symbol: str) -> tuple[List[Rule], Dict[str, float]]:
+        """Get the appropriate rules for a symbol (override or default)."""
+        # Check cache first
+        if symbol in self._symbol_rules:
+            return self._symbol_rules[symbol], self._symbol_weights.get(symbol, {})
+
+        # Check for symbol-specific override
+        rules, weights, exit_strategy = RuleRegistry.load_symbol_rules(self._config, symbol)
+
+        if rules is not None:
+            # Cache the symbol-specific rules
+            self._symbol_rules[symbol] = rules
+            self._symbol_weights[symbol] = weights
+            self._symbol_exit_strategies[symbol] = exit_strategy
+            logger.info(f"Using {len(rules)} override rules for {symbol}")
+            return rules, weights
+
+        # No override - use default rules
+        return self.rules, self.rule_weights
+
+    def get_exit_strategy(self, symbol: str) -> dict:
+        """Get the exit strategy for a symbol."""
+        if symbol in self._symbol_exit_strategies:
+            return self._symbol_exit_strategies[symbol]
+        return self._config.get("exit_strategy", {"profit_target": 0.07, "stop_loss": 0.05})
+
     def _evaluate_rules(
         self,
         symbol: str,
@@ -179,13 +218,16 @@ class DecisionEngineService:
             metadata=position_metadata,
         )
 
+        # Get rules for this symbol (may be symbol-specific or default)
+        rules, _ = self._get_rules_for_symbol(symbol)
+
         # Evaluate each rule
         buy_signals: List[Signal] = []
         sell_signals: List[Signal] = []
         watch_signals: List[Signal] = []
         rules_evaluated = 0
 
-        for rule in self.rules:
+        for rule in rules:
             if not rule.can_evaluate(context):
                 logger.debug(f"Rule {rule.name} cannot evaluate (missing indicators)")
                 continue
@@ -346,6 +388,18 @@ class DecisionEngineService:
         logger.info(f"Min confidence to publish: {self.settings.min_publish_confidence}")
         logger.info(f"Ranking interval: {self.settings.ranking_interval_seconds}s")
         logger.info(f"Position tracking: enabled (listening to trading.orders)")
+
+        # Log symbol-specific configurations
+        symbol_overrides = RuleRegistry.get_symbol_overrides(self._config)
+        if symbol_overrides:
+            logger.info("-" * 40)
+            logger.info("Symbol-Specific Rule Configurations:")
+            for symbol, rule_names in symbol_overrides.items():
+                exit_strat = self._config.get("symbol_overrides", {}).get(symbol, {}).get("exit_strategy", {})
+                pt = exit_strat.get("profit_target", 0.07) * 100
+                sl = exit_strat.get("stop_loss", 0.05) * 100
+                logger.info(f"  {symbol}: {len(rule_names)} rules, PT={pt:.0f}%, SL={sl:.0f}%")
+
         logger.info("=" * 60)
 
         # Start position tracker first

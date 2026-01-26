@@ -40,6 +40,11 @@ MINER_COMMODITY_MAP = {
     "SILJ": "silver",
     "AG": "silver",
     "PAAS": "silver",
+    "HL": "silver",      # Hecla Mining
+    "MAG": "silver",     # MAG Silver
+    "CDE": "silver",     # Coeur Mining
+    "EXK": "silver",     # Endeavour Silver
+    "FSM": "silver",     # Fortuna Silver
 
     # Uranium miners
     "CCJ": "uranium",

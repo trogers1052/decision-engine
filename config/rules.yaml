@@ -224,3 +224,175 @@ output:
 
   # Only publish signals above this confidence
   min_publish_confidence: 0.5
+
+# -----------------------------------------------------------------------------
+# Symbol-Specific Rule Overrides (Backtested 2021-01-01 to 2026-01-25)
+# -----------------------------------------------------------------------------
+# ONLY trade these symbols - they have proven backtested results.
+# Removed: ETN (45.8% WR), HL (-47% DD), PAAS (0.17 Sharpe), FCX (0.18 Sharpe)
+# -----------------------------------------------------------------------------
+symbol_overrides:
+
+  # =========================================================================
+  # TIER 1 - BEST PERFORMERS (Sharpe > 1.0)
+  # =========================================================================
+
+  CCJ:
+    description: "Cameco - Uranium (57.1% WR, +492.4%, 1.17 Sharpe) TOP PICK"
+    rules:
+      - enhanced_buy_dip
+      - momentum_reversal
+      - trend_continuation
+      - average_down
+    exit_strategy:
+      profit_target: 0.10
+      stop_loss: 0.05
+    min_confidence: 0.5
+
+  CAT:
+    description: "Caterpillar - Industrial (65.3% WR, +159%, 1.14 Sharpe)"
+    rules:
+      - enhanced_buy_dip
+      - momentum_reversal
+      - trend_continuation
+      - average_down
+      - rsi_oversold
+      - rsi_overbought
+      - macd_bearish_crossover
+      - trend_alignment
+      - trend_break_warning
+    exit_strategy:
+      profit_target: 0.10
+      stop_loss: 0.05
+    min_confidence: 0.5
+
+  WPM:
+    description: "Wheaton Precious Metals (56.4% WR, +203.4%, 1.04 Sharpe)"
+    rules:
+      - enhanced_buy_dip
+      - momentum_reversal
+      - trend_continuation
+      - average_down
+      - rsi_oversold
+      - rsi_overbought
+      - macd_bearish_crossover
+      - trend_alignment
+      - trend_break_warning
+      - commodity_breakout
+      - miner_metal_ratio
+      - dollar_weakness
+      - seasonality
+      - volume_breakout
+    exit_strategy:
+      profit_target: 0.12
+      stop_loss: 0.06
+    min_confidence: 0.5
+
+  PPLT:
+    description: "Platinum ETF (59.6% WR, +133%, 1.03 Sharpe)"
+    rules:
+      - enhanced_buy_dip
+      - momentum_reversal
+      - trend_continuation
+      - average_down
+      - rsi_oversold
+      - rsi_overbought
+      - macd_bearish_crossover
+      - trend_alignment
+      - trend_break_warning
+    exit_strategy:
+      profit_target: 0.10
+      stop_loss: 0.05
+    min_confidence: 0.5
+
+  # =========================================================================
+  # TIER 2 - GOOD PERFORMERS (Sharpe 0.5-1.0)
+  # =========================================================================
+
+  IAUM:
+    description: "iShares Gold Micro (58.1% WR, +80%, 0.69 Sharpe, LOWEST DD -13.6%)"
+    rules:
+      - enhanced_buy_dip
+      - momentum_reversal
+      - trend_continuation
+      - average_down
+      - rsi_oversold
+      - rsi_overbought
+      - macd_bearish_crossover
+      - trend_alignment
+      - trend_break_warning
+    exit_strategy:
+      profit_target: 0.10
+      stop_loss: 0.05
+    min_confidence: 0.5
+
+  URNM:
+    description: "Uranium Mining ETF (57.1% WR, +173.6%, 0.68 Sharpe)"
+    rules:
+      - enhanced_buy_dip
+      - momentum_reversal
+      - trend_continuation
+      - average_down
+    exit_strategy:
+      profit_target: 0.10
+      stop_loss: 0.05
+    min_confidence: 0.5
+
+  SLV:
+    description: "Silver ETF (55.2% WR, +265.8%, 0.60 Sharpe)"
+    rules:
+      - enhanced_buy_dip
+      - momentum_reversal
+      - trend_continuation
+      - average_down
+      - rsi_oversold
+      - rsi_overbought
+      - macd_bearish_crossover
+      - trend_alignment
+      - trend_break_warning
+      - commodity_breakout
+      - miner_metal_ratio
+      - dollar_weakness
+      - seasonality
+      - volume_breakout
+    exit_strategy:
+      profit_target: 0.12
+      stop_loss: 0.06
+    min_confidence: 0.5
+
+  # =========================================================================
+  # TIER 3 - HIGH RISK / HIGH REWARD (Use smaller position sizes)
+  # =========================================================================
+
+  MP:
+    description: "MP Materials - Rare Earth (50% WR, +164%, 0.61 Sharpe, CAUTION: -39% DD)"
+    rules:
+      - enhanced_buy_dip
+      - momentum_reversal
+      - trend_continuation
+      - average_down
+    exit_strategy:
+      profit_target: 0.10
+      stop_loss: 0.05
+    min_confidence: 0.5
+
+  UUUU:
+    description: "Energy Fuels - Uranium (55.2% WR, +269.9%, 0.53 Sharpe, CAUTION: -32% DD)"
+    rules:
+      - enhanced_buy_dip
+      - momentum_reversal
+      - trend_continuation
+      - average_down
+    exit_strategy:
+      profit_target: 0.10
+      stop_loss: 0.05
+    min_confidence: 0.5
+
+# -----------------------------------------------------------------------------
+# DO NOT TRADE - Removed due to poor backtested performance:
+# -----------------------------------------------------------------------------
+# ETN:  45.8% WR, below 50% = losing strategy
+# HL:   36.8% WR, -38.7% DD, -0.07 Sharpe = disaster
+# PAAS: 48.1% WR, +14.2%, 0.17 Sharpe, -55.9% DD = not worth it
+# FCX:  52.9% WR, +15.9%, 0.18 Sharpe, -39.5% DD = not worth it
+# -----------------------------------------------------------------------------

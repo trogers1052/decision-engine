@@ -234,3 +234,58 @@ class RuleRegistry:
                 lines.append(f"\n{name}: (unable to instantiate)")
 
         return "\n".join(lines)
+
+    @staticmethod
+    def load_symbol_rules(config: dict, symbol: str) -> tuple[List[Rule], Dict[str, float], dict]:
+        """
+        Load rules for a specific symbol, using overrides if configured.
+
+        Args:
+            config: Full configuration dict
+            symbol: The symbol to load rules for
+
+        Returns:
+            Tuple of (list of rules, dict of rule weights, exit strategy dict)
+        """
+        symbol_overrides = config.get("symbol_overrides", {})
+        global_rules_config = config.get("rules", {})
+        default_exit = config.get("exit_strategy", {"profit_target": 0.07, "stop_loss": 0.05})
+
+        # Check if this symbol has overrides
+        if symbol in symbol_overrides:
+            override = symbol_overrides[symbol]
+            rule_names = override.get("rules", [])
+            exit_strategy = override.get("exit_strategy", default_exit)
+
+            rules = []
+            weights = {}
+
+            for rule_name in rule_names:
+                # Get params from global config if available
+                rule_config = global_rules_config.get(rule_name, {})
+
+                rule = RuleRegistry.create_rule(rule_name, rule_config)
+                if rule:
+                    rules.append(rule)
+                    weights[rule.name] = rule_config.get("weight", 1.0)
+                    logger.debug(f"Loaded override rule for {symbol}: {rule.name}")
+
+            logger.info(f"Symbol {symbol}: using {len(rules)} override rules")
+            return rules, weights, exit_strategy
+
+        # No overrides - return None to signal use of default rules
+        return None, None, default_exit
+
+    @staticmethod
+    def get_symbol_overrides(config: dict) -> Dict[str, List[str]]:
+        """
+        Get all symbol overrides from config.
+
+        Returns:
+            Dict mapping symbol -> list of rule names
+        """
+        symbol_overrides = config.get("symbol_overrides", {})
+        return {
+            symbol: override.get("rules", [])
+            for symbol, override in symbol_overrides.items()
+        }
