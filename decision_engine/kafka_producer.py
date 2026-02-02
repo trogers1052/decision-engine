@@ -5,7 +5,7 @@ Kafka producer for decision and ranking events.
 import json
 import logging
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 from kafka import KafkaProducer
 from kafka.errors import KafkaError
@@ -67,6 +67,7 @@ class DecisionProducer:
         self,
         signal: AggregatedSignal,
         indicators_snapshot: Dict[str, float],
+        risk_result: Optional[Any] = None,
     ) -> bool:
         """
         Publish a decision event to Kafka.
@@ -74,6 +75,7 @@ class DecisionProducer:
         Args:
             signal: Aggregated signal for a symbol.
             indicators_snapshot: Current indicator values.
+            risk_result: Optional RiskCheckResult from risk engine.
 
         Returns:
             True if published successfully, False otherwise.
@@ -85,7 +87,7 @@ class DecisionProducer:
             event = {
                 "event_type": "DECISION_UPDATE",
                 "source": "decision-engine",
-                "schema_version": "1.0",
+                "schema_version": "1.1",
                 "timestamp": datetime.utcnow().isoformat() + "Z",
                 "data": {
                     "symbol": signal.symbol,
@@ -110,6 +112,25 @@ class DecisionProducer:
                     },
                 },
             }
+
+            # Include risk assessment if available
+            if risk_result is not None:
+                event["data"]["risk_assessment"] = {
+                    "passes": risk_result.passes,
+                    "risk_score": round(risk_result.risk_score, 4),
+                    "risk_level": risk_result.risk_level.value,
+                    "recommended_shares": risk_result.recommended_shares,
+                    "max_shares": risk_result.max_shares,
+                    "recommended_dollar_amount": round(
+                        risk_result.recommended_dollar_amount, 2
+                    ),
+                    "reason": risk_result.reason,
+                    "risk_metrics": {
+                        k: round(v, 4) if isinstance(v, float) else v
+                        for k, v in risk_result.risk_metrics.items()
+                    },
+                    "warnings": risk_result.warnings,
+                }
 
             # Use symbol as key for partitioning
             future = self._producer.send(

@@ -15,6 +15,15 @@ from .ranker import SymbolRanker, RankingCriteria
 from .rules.base import Rule, SymbolContext, SignalType
 from .rules.registry import RuleRegistry
 from .models.signals import Signal, AggregatedSignal, ConfidenceAggregator
+from .rules_cache import RulesCache
+
+# Risk engine integration (optional)
+try:
+    from risk_engine import RiskAdapter
+    HAS_RISK_ENGINE = True
+except ImportError:
+    HAS_RISK_ENGINE = False
+    RiskAdapter = None
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +62,13 @@ class DecisionEngineService:
         # Debouncing
         self._last_publish: Dict[str, datetime] = {}
         self._last_ranking_publish: Optional[datetime] = None
+
+        # Risk engine integration
+        self.risk_adapter = None
+        self._risk_enabled = getattr(settings, 'risk_engine_enabled', True)
+
+        # Rules cache for cross-service access
+        self.rules_cache: Optional[RulesCache] = None
 
     def initialize(self) -> bool:
         """Initialize all connections and load rules."""
@@ -106,6 +122,43 @@ class DecisionEngineService:
             else:
                 logger.warning("Position tracker failed to connect - average_down will not work")
 
+            # Initialize rules cache and publish rules to Redis
+            if getattr(self.settings, 'rules_cache_enabled', True):
+                self.rules_cache = RulesCache(
+                    host=self.settings.redis_host,
+                    port=self.settings.redis_port,
+                    db=self.settings.redis_db,
+                    password=self.settings.redis_password,
+                )
+                if self.rules_cache.connect():
+                    if self.rules_cache.publish_rules(self._config):
+                        logger.info("Published rules to Redis cache for cross-service access")
+                    else:
+                        logger.warning("Failed to publish rules to Redis cache")
+                else:
+                    logger.warning("Failed to connect to Redis for rules cache")
+                    self.rules_cache = None
+
+            # Initialize risk engine if available and enabled
+            if HAS_RISK_ENGINE and self._risk_enabled:
+                try:
+                    risk_config_path = getattr(
+                        self.settings, 'risk_config_path', None
+                    )
+                    self.risk_adapter = RiskAdapter(config_path=risk_config_path)
+                    if self.risk_adapter.initialize():
+                        logger.info("Risk engine initialized successfully")
+                    else:
+                        logger.warning("Risk engine failed to initialize")
+                        self.risk_adapter = None
+                except Exception as e:
+                    logger.warning(f"Risk engine initialization error: {e}")
+                    self.risk_adapter = None
+            elif not HAS_RISK_ENGINE:
+                logger.info("Risk engine not available (risk_engine package not installed)")
+            else:
+                logger.info("Risk engine disabled by configuration")
+
             logger.info(f"Decision engine initialized with {len(self.rules)} rules")
             for rule in self.rules:
                 logger.info(f"  - {rule.name}: {rule.description}")
@@ -158,8 +211,31 @@ class DecisionEngineService:
 
                 # Publish if above threshold and not debounced
                 if self._should_publish(symbol, aggregated_signal):
-                    self.producer.publish_decision(aggregated_signal, indicators)
-                    self._last_publish[symbol] = datetime.utcnow()
+                    # Check risk for BUY signals
+                    risk_result = None
+                    should_publish = True
+
+                    if (
+                        self.risk_adapter
+                        and aggregated_signal.signal_type == SignalType.BUY
+                    ):
+                        risk_result = self.risk_adapter.check_risk(
+                            symbol=symbol,
+                            signal_type="BUY",
+                            confidence=aggregated_signal.aggregate_confidence,
+                            indicators=indicators,
+                        )
+                        if not risk_result.passes:
+                            logger.info(
+                                f"Risk check rejected {symbol}: {risk_result.reason}"
+                            )
+                            should_publish = False
+
+                    if should_publish:
+                        self.producer.publish_decision(
+                            aggregated_signal, indicators, risk_result=risk_result
+                        )
+                        self._last_publish[symbol] = datetime.utcnow()
 
             # Check if we should publish rankings
             self._maybe_publish_rankings()
@@ -418,5 +494,9 @@ class DecisionEngineService:
             self.consumer.close()
         if self.producer:
             self.producer.close()
+        if self.risk_adapter:
+            self.risk_adapter.shutdown()
+        if self.rules_cache:
+            self.rules_cache.close()
 
         logger.info("Decision engine stopped")

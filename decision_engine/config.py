@@ -67,6 +67,12 @@ class Settings(BaseSettings):
         description="Minimum time between publishes for same symbol"
     )
 
+    # Rules cache settings
+    rules_cache_enabled: bool = Field(
+        True,
+        description="Enable publishing rules to Redis for cross-service access"
+    )
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
