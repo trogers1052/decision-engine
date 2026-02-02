@@ -15,6 +15,9 @@ redis>=5.0.0
 # Database (optional, for decision logging)
 psycopg2-binary>=2.9.0
 
+# Risk Engine (position sizing, portfolio risk)
+risk-engine @ git+https://github.com/trogers1052/risk-engine.git
+
 # Testing
 pytest>=7.0.0
 pytest-asyncio>=0.21.0
