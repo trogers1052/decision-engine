@@ -331,13 +331,32 @@ class DecisionEngineService:
                 else:
                     watch_signals.append(signal)
 
+        # Check consensus requirement
+        aggregation_config = self._config.get("aggregation", {})
+        require_consensus = aggregation_config.get("require_consensus", False)
+        consensus_min_rules = aggregation_config.get("consensus_min_rules", 1)
+
         # Determine dominant signal type
         # Priority: BUY/SELL over WATCH, and if tied, the one with more signals
         if buy_signals and len(buy_signals) >= len(sell_signals):
+            # Check if we have enough rules agreeing (consensus)
+            if require_consensus and len(buy_signals) < consensus_min_rules:
+                logger.debug(
+                    f"Skipping BUY for {symbol}: only {len(buy_signals)} rules triggered, "
+                    f"need {consensus_min_rules} for consensus"
+                )
+                return None
             return self._aggregate_signals(
                 symbol, SignalType.BUY, buy_signals, rules_evaluated, timestamp
             )
         elif sell_signals:
+            # Check if we have enough rules agreeing (consensus)
+            if require_consensus and len(sell_signals) < consensus_min_rules:
+                logger.debug(
+                    f"Skipping SELL for {symbol}: only {len(sell_signals)} rules triggered, "
+                    f"need {consensus_min_rules} for consensus"
+                )
+                return None
             return self._aggregate_signals(
                 symbol, SignalType.SELL, sell_signals, rules_evaluated, timestamp
             )
