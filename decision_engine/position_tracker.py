@@ -1,8 +1,8 @@
 """
 Position Tracker - Listens to trading.orders to track open positions.
 
-This enables the average_down rule to know when we have a position
-and what our entry price is.
+Tracks open positions so rules and context enrichment know when
+we're already in a trade and what our entry price is.
 """
 
 import json

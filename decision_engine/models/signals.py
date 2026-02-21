@@ -46,6 +46,10 @@ class AggregatedSignal:
     rules_triggered: int = 0
     rules_evaluated: int = 0
 
+    # Market regime context (populated from context-service via Redis)
+    regime_id: str = "UNKNOWN"
+    regime_confidence: float = 0.0
+
     def to_dict(self) -> dict:
         return {
             "symbol": self.symbol,
@@ -55,6 +59,8 @@ class AggregatedSignal:
             "contributing_signals": [s.to_dict() for s in self.contributing_signals],
             "rules_triggered": self.rules_triggered,
             "rules_evaluated": self.rules_evaluated,
+            "regime_id": self.regime_id,
+            "regime_confidence": round(self.regime_confidence, 3),
             "timestamp": self.timestamp.isoformat() + "Z",
         }
 

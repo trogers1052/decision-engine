@@ -40,6 +40,14 @@ class Settings(BaseSettings):
     redis_password: str = Field("", description="Redis password")
     redis_db: int = Field(1, description="Redis database number")
 
+    # Market context (published by context-service, read from Redis db=0)
+    market_context_redis_db: int = Field(
+        0, description="Redis DB where context-service publishes market:context"
+    )
+    market_context_redis_key: str = Field(
+        "market:context", description="Redis key for market regime context"
+    )
+
     # Database (optional, for decision logging)
     db_host: str = Field("localhost", description="PostgreSQL host")
     db_port: int = Field(5432, description="PostgreSQL port")

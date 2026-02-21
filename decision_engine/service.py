@@ -12,6 +12,7 @@ import redis
 from .config import Settings
 from .kafka_consumer import IndicatorConsumer
 from .kafka_producer import DecisionProducer
+from .market_context import MarketContextReader
 from .state_manager import StateManager
 from .position_tracker import PositionTracker
 from .ranker import SymbolRanker, RankingCriteria
@@ -72,11 +73,18 @@ class DecisionEngineService:
         self.risk_adapter = None
         self._risk_enabled = getattr(settings, 'risk_engine_enabled', True)
 
+        # Whether the position tracker connected successfully; if False we skip
+        # the SELL-signal suppression check because we can't trust the state.
+        self._position_tracker_connected: bool = False
+
         # Trade plan engine (instantiated after config is loaded in initialize())
         self.trade_plan_engine: Optional[TradePlanEngine] = None
 
         # Rules cache for cross-service access
         self.rules_cache: Optional[RulesCache] = None
+
+        # Market context reader (reads regime from context-service via Redis)
+        self.market_context_reader: Optional[MarketContextReader] = None
 
     def initialize(self) -> bool:
         """Initialize all connections and load rules."""
@@ -135,7 +143,7 @@ class DecisionEngineService:
                 logger.error("Failed to connect to Kafka producer")
                 return False
 
-            # Initialize position tracker (for average_down rule)
+            # Initialize position tracker (tracks open positions for context enrichment)
             self.position_tracker = PositionTracker(
                 brokers=self.settings.kafka_broker_list,
                 topic=getattr(self.settings, 'kafka_orders_topic', 'trading.orders'),
@@ -146,8 +154,12 @@ class DecisionEngineService:
             )
             if self.position_tracker.connect():
                 logger.info("Position tracker connected to trading.orders")
+                self._position_tracker_connected = True
             else:
-                logger.warning("Position tracker failed to connect - average_down will not work")
+                logger.warning(
+                    "Position tracker failed to connect - position context unavailable; "
+                    "SELL signal suppression is DISABLED (cannot verify position state)"
+                )
 
             # Load existing positions from Redis (robinhood-sync stores them there)
             self._load_positions_from_redis()
@@ -168,6 +180,16 @@ class DecisionEngineService:
                 else:
                     logger.warning("Failed to connect to Redis for rules cache")
                     self.rules_cache = None
+
+            # Initialize market context reader (reads regime published by context-service)
+            self.market_context_reader = MarketContextReader(
+                host=self.settings.redis_host,
+                port=self.settings.redis_port,
+                db=self.settings.market_context_redis_db,
+                key=self.settings.market_context_redis_key,
+                password=self.settings.redis_password,
+            )
+            self.market_context_reader.start()
 
             # Initialize risk engine if available and enabled
             if HAS_RISK_ENGINE and self._risk_enabled:
@@ -254,8 +276,9 @@ class DecisionEngineService:
                                 f"Trade plan R:R warning for {symbol}: {trade_plan.rr_warning}"
                             )
                     except Exception as exc:
-                        logger.warning(
-                            f"Trade plan generation failed for {symbol}: {exc}"
+                        logger.error(
+                            f"Trade plan generation failed for {symbol}: {exc}",
+                            exc_info=True,
                         )
 
                 # Publish if above threshold and not debounced
@@ -333,7 +356,7 @@ class DecisionEngineService:
         # Build context
         state = self.state_manager.get_state(symbol)
 
-        # Get position metadata for average_down rule
+        # Get position metadata (current position state for context enrichment)
         position_metadata = self.state_manager.get_position_metadata(symbol)
 
         context = SymbolContext(
@@ -388,9 +411,10 @@ class DecisionEngineService:
         require_consensus = aggregation_config.get("require_consensus", False)
         consensus_min_rules = aggregation_config.get("consensus_min_rules", 1)
 
-        # Determine dominant signal type
-        # Priority: BUY/SELL over WATCH, and if tied, the one with more signals
-        if buy_signals and len(buy_signals) >= len(sell_signals):
+        # Determine dominant signal type.
+        # Require a strict majority: ties (equal buy and sell counts) produce no
+        # actionable signal — a split vote is not a go signal.
+        if buy_signals and len(buy_signals) > len(sell_signals):
             # Check if we have enough rules agreeing (consensus)
             if require_consensus and len(buy_signals) < consensus_min_rules:
                 logger.debug(
@@ -401,7 +425,7 @@ class DecisionEngineService:
             return self._aggregate_signals(
                 symbol, SignalType.BUY, buy_signals, rules_evaluated, timestamp
             )
-        elif sell_signals:
+        elif sell_signals and len(sell_signals) > len(buy_signals):
             # Check if we have enough rules agreeing (consensus)
             if require_consensus and len(sell_signals) < consensus_min_rules:
                 logger.debug(
@@ -432,6 +456,21 @@ class DecisionEngineService:
         # Calculate aggregate confidence using consensus boost
         aggregate_confidence = ConfidenceAggregator.consensus_boost(signals)
 
+        # Apply regime multiplier to BUY signals (SELL/WATCH unaffected)
+        regime_id = "UNKNOWN"
+        regime_confidence = 0.0
+        if self.market_context_reader:
+            regime_id = self.market_context_reader.get_regime()
+            regime_confidence = self.market_context_reader.get_regime_confidence()
+            multiplier = self.market_context_reader.get_multiplier(signal_type.value)
+            if multiplier != 1.0:
+                original = aggregate_confidence
+                aggregate_confidence = min(aggregate_confidence * multiplier, 1.0)
+                logger.debug(
+                    f"{symbol}: regime={regime_id} multiplier={multiplier:.1f} "
+                    f"confidence {original:.3f} → {aggregate_confidence:.3f}"
+                )
+
         # Pick primary reasoning from highest confidence signal
         primary_signal = max(signals, key=lambda s: s.confidence)
 
@@ -444,6 +483,8 @@ class DecisionEngineService:
             timestamp=timestamp,
             rules_triggered=len(signals),
             rules_evaluated=rules_evaluated,
+            regime_id=regime_id,
+            regime_confidence=regime_confidence,
         )
 
     def _should_publish(self, symbol: str, signal: AggregatedSignal) -> bool:
@@ -459,10 +500,16 @@ class DecisionEngineService:
             if elapsed < self.settings.debounce_seconds:
                 return False
 
-        # Skip SELL signals if we don't have a position in this symbol
-        if signal.signal_type == SignalType.SELL:
+        # Skip SELL signals if we don't have a position in this symbol.
+        # Only applies when position tracking is healthy — if the tracker
+        # failed to connect we can't trust the state, so we allow the signal
+        # through rather than silently dropping legitimate SELL alerts.
+        if signal.signal_type == SignalType.SELL and self._position_tracker_connected:
             if not self.state_manager.get_position(symbol):
-                logger.debug(f"Skipping SELL for {symbol}: no position tracked")
+                logger.warning(
+                    f"Suppressing SELL for {symbol}: no tracked position "
+                    f"(position tracker connected={self._position_tracker_connected})"
+                )
                 return False
 
         return True
@@ -618,5 +665,7 @@ class DecisionEngineService:
             self.risk_adapter.shutdown()
         if self.rules_cache:
             self.rules_cache.close()
+        if self.market_context_reader:
+            self.market_context_reader.stop()
 
         logger.info("Decision engine stopped")

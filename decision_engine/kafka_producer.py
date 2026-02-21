@@ -109,6 +109,8 @@ class DecisionProducer:
                         k: round(v, 4) if isinstance(v, float) else v
                         for k, v in indicators_snapshot.items()
                     },
+                    "regime_id": signal.regime_id,
+                    "regime_confidence": round(signal.regime_confidence, 3),
                     "metadata": {
                         "rules_evaluated": signal.rules_evaluated,
                         "rules_triggered": signal.rules_triggered,

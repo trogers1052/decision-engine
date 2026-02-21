@@ -51,9 +51,11 @@ rules:
     pullback_tolerance_pct: 2.0
     weight: 1.5
 
-  # SCALE-IN: Average down on deeper dips
+  # SCALE-IN: Removed — philosophically dangerous at $888 account size.
+  # Guards were insufficient (RSI 35 too loose, 2% drop too small, no earnings blackout).
+  # Revisit at $10k+ with Telegram confirmation gate and earnings calendar integration.
   average_down:
-    enabled: true  # Position tracking now implemented!
+    enabled: false
     description: "Add to position when RSI < 35 and price 2%+ below entry"
     rsi_extreme: 35.0
     max_scale_ins: 2
@@ -243,7 +245,6 @@ symbol_overrides:
       - enhanced_buy_dip
       - momentum_reversal
       - trend_continuation
-      - average_down
     exit_strategy:
       profit_target: 0.10
       stop_loss: 0.05
@@ -255,7 +256,6 @@ symbol_overrides:
       - enhanced_buy_dip
       - momentum_reversal
       - trend_continuation
-      - average_down
       - rsi_oversold
       - rsi_overbought
       - macd_bearish_crossover
@@ -272,7 +272,6 @@ symbol_overrides:
       - enhanced_buy_dip
       - momentum_reversal
       - trend_continuation
-      - average_down
       - rsi_oversold
       - rsi_overbought
       - macd_bearish_crossover
@@ -294,7 +293,6 @@ symbol_overrides:
       - enhanced_buy_dip
       - momentum_reversal
       - trend_continuation
-      - average_down
       - rsi_oversold
       - rsi_overbought
       - macd_bearish_crossover
@@ -315,7 +313,6 @@ symbol_overrides:
       - enhanced_buy_dip
       - momentum_reversal
       - trend_continuation
-      - average_down
       - rsi_oversold
       - rsi_overbought
       - macd_bearish_crossover
@@ -332,7 +329,6 @@ symbol_overrides:
       - enhanced_buy_dip
       - momentum_reversal
       - trend_continuation
-      - average_down
     exit_strategy:
       profit_target: 0.10
       stop_loss: 0.05
@@ -344,7 +340,6 @@ symbol_overrides:
       - enhanced_buy_dip
       - momentum_reversal
       - trend_continuation
-      - average_down
       - rsi_oversold
       - rsi_overbought
       - macd_bearish_crossover
@@ -370,7 +365,6 @@ symbol_overrides:
       - enhanced_buy_dip
       - momentum_reversal
       - trend_continuation
-      - average_down
     exit_strategy:
       profit_target: 0.10
       stop_loss: 0.05
@@ -382,7 +376,6 @@ symbol_overrides:
       - enhanced_buy_dip
       - momentum_reversal
       - trend_continuation
-      - average_down
     exit_strategy:
       profit_target: 0.10
       stop_loss: 0.05
