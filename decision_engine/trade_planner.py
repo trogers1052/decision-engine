@@ -270,7 +270,14 @@ class TradePlanEngine:
 
     def _classify_setup(self, rule_names: list[str]) -> SetupType:
         rule_set = set(rule_names)
-        if "Enhanced Buy Dip" in rule_set or "Momentum Reversal" in rule_set:
+        if rule_set & {
+            "Enhanced Buy Dip",
+            "Momentum Reversal",
+            "Buy Dip in Uptrend",
+            "Strong Buy Signal",
+            "RSI + MACD Confluence",
+            "Dip Recovery",
+        }:
             return SetupType.OVERSOLD_BOUNCE
         if "Trend Continuation" in rule_set:
             return SetupType.PULLBACK_TO_SUPPORT
@@ -330,12 +337,12 @@ class TradePlanEngine:
         stop_pct = (entry_price - raw_stop) / entry_price * 100
 
         if stop_pct < self.stop_min_pct:
-            raw_stop = entry_price * (1 - self.stop_min_pct / 100 + 0.01)
-            # Widen to 1 pct point above min to create a safe floor at 4%
-            raw_stop = entry_price * 0.96
-            stop_method = "percentage_4pct"
-            stop_pct = 4.0
-            warnings.append("ATR-based stop was <3% — widened to 4%")
+            # Widen to 1 pct point above the configured minimum to create a safe floor
+            floor_pct = self.stop_min_pct + 1.0
+            raw_stop = entry_price * (1 - floor_pct / 100)
+            stop_method = f"percentage_{floor_pct:.0f}pct"
+            stop_pct = floor_pct
+            warnings.append(f"ATR-based stop was <{self.stop_min_pct:.0f}% — widened to {floor_pct:.0f}%")
         elif stop_pct > self.stop_max_pct:
             raw_stop = entry_price * 0.90
             stop_method = "percentage_10pct"

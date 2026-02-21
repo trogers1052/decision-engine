@@ -134,6 +134,32 @@ class TestSetupClassification(unittest.TestCase):
         result = engine._classify_setup(["Volume Breakout"])
         self.assertEqual(result, SetupType.BREAKOUT)
 
+    def test_oversold_bounce_from_buy_dip_in_uptrend(self):
+        engine = _engine()
+        result = engine._classify_setup(["Buy Dip in Uptrend"])
+        self.assertEqual(result, SetupType.OVERSOLD_BOUNCE)
+
+    def test_oversold_bounce_from_strong_buy_signal(self):
+        engine = _engine()
+        result = engine._classify_setup(["Strong Buy Signal"])
+        self.assertEqual(result, SetupType.OVERSOLD_BOUNCE)
+
+    def test_oversold_bounce_from_rsi_macd_confluence(self):
+        engine = _engine()
+        result = engine._classify_setup(["RSI + MACD Confluence"])
+        self.assertEqual(result, SetupType.OVERSOLD_BOUNCE)
+
+    def test_oversold_bounce_from_dip_recovery(self):
+        engine = _engine()
+        result = engine._classify_setup(["Dip Recovery"])
+        self.assertEqual(result, SetupType.OVERSOLD_BOUNCE)
+
+    def test_oversold_bounce_when_primary_and_enhanced_mix(self):
+        # Real-world: multiple rules fire together
+        engine = _engine()
+        result = engine._classify_setup(["Buy Dip in Uptrend", "Strong Buy Signal"])
+        self.assertEqual(result, SetupType.OVERSOLD_BOUNCE)
+
     def test_signal_fallback(self):
         engine = _engine()
         result = engine._classify_setup(["Some Unknown Rule"])
@@ -263,6 +289,21 @@ class TestATRTooTight(unittest.TestCase):
             any("widened to 4%" in w for w in self.plan.warnings),
             f"Expected widened warning in {self.plan.warnings}",
         )
+
+
+class TestATRFloorIsConfigDriven(unittest.TestCase):
+    """Stop floor respects stop_min_pct, not a hardcoded 4%."""
+
+    def test_custom_stop_min_pct_changes_floor(self):
+        # stop_min_pct=5.0 → floor should be 6%
+        indicators = dict(BASE_INDICATORS)
+        indicators["ATR_14"] = 0.10  # tiny ATR, stop would be ~0.4%
+        engine = _engine(stop_min_pct=5.0)
+        signal = _make_aggregated("CCJ", ["Enhanced Buy Dip"])
+        plan = engine.generate(signal, indicators)
+        self.assertEqual(plan.stop_method, "percentage_6pct")
+        self.assertAlmostEqual(plan.stop_pct, 6.0, places=1)
+        self.assertTrue(any("widened to 6%" in w for w in plan.warnings))
 
 
 class TestATRTooWide(unittest.TestCase):

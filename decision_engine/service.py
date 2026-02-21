@@ -2,9 +2,12 @@
 Main decision engine service.
 """
 
+import json
 import logging
 from datetime import datetime
 from typing import Dict, List, Optional
+
+import redis
 
 from .config import Settings
 from .kafka_consumer import IndicatorConsumer
@@ -145,6 +148,9 @@ class DecisionEngineService:
                 logger.info("Position tracker connected to trading.orders")
             else:
                 logger.warning("Position tracker failed to connect - average_down will not work")
+
+            # Load existing positions from Redis (robinhood-sync stores them there)
+            self._load_positions_from_redis()
 
             # Initialize rules cache and publish rules to Redis
             if getattr(self.settings, 'rules_cache_enabled', True):
@@ -453,6 +459,12 @@ class DecisionEngineService:
             if elapsed < self.settings.debounce_seconds:
                 return False
 
+        # Skip SELL signals if we don't have a position in this symbol
+        if signal.signal_type == SignalType.SELL:
+            if not self.state_manager.get_position(symbol):
+                logger.debug(f"Skipping SELL for {symbol}: no position tracked")
+                return False
+
         return True
 
     def _maybe_publish_rankings(self):
@@ -513,6 +525,49 @@ class DecisionEngineService:
         """Called when scaling into a position."""
         self.state_manager.add_to_position(symbol, price, shares)
         logger.info(f"Position tracking: scale-in {symbol} +{shares} @ ${price:.2f}")
+
+    def _load_positions_from_redis(self):
+        """Load existing positions from Redis on startup.
+
+        robinhood-sync stores positions at 'robinhood:positions' as a hash
+        with symbol → JSON position data. This ensures we know about existing
+        positions even after a service restart.
+        """
+        try:
+            client = redis.Redis(
+                host=self.settings.redis_host,
+                port=self.settings.redis_port,
+                password=self.settings.redis_password or None,
+                db=self.settings.redis_db,
+                decode_responses=True,
+            )
+
+            positions_data = client.hgetall("robinhood:positions")
+            if not positions_data:
+                logger.info("No existing positions found in Redis")
+                return
+
+            loaded_count = 0
+            for symbol, pos_json in positions_data.items():
+                try:
+                    pos = json.loads(pos_json)
+                    quantity = float(pos.get("quantity", 0))
+                    avg_price = float(pos.get("average_buy_price", 0))
+
+                    if quantity > 0:
+                        self.state_manager.open_position(symbol, avg_price, quantity)
+                        loaded_count += 1
+                        logger.debug(f"Loaded position: {symbol} - {quantity} shares @ ${avg_price:.2f}")
+                except (json.JSONDecodeError, KeyError, ValueError) as e:
+                    logger.warning(f"Failed to parse position for {symbol}: {e}")
+
+            if loaded_count > 0:
+                logger.info(f"Loaded {loaded_count} existing positions from Redis")
+
+            client.close()
+
+        except redis.RedisError as e:
+            logger.warning(f"Failed to load positions from Redis: {e}")
 
     # =========================================================================
     # Service Lifecycle
