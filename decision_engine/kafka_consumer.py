@@ -55,8 +55,11 @@ class IndicatorConsumer:
                 value_deserializer=lambda m: json.loads(m.decode("utf-8")),
                 # Use 'earliest' to prevent data loss on restart
                 auto_offset_reset="earliest",
-                enable_auto_commit=True,
-                auto_commit_interval_ms=1000,
+                enable_auto_commit=False,
+                request_timeout_ms=30000,
+                session_timeout_ms=30000,
+                heartbeat_interval_ms=10000,
+                max_poll_interval_ms=300000,
             )
 
             logger.info("Successfully connected to Kafka consumer")
@@ -78,6 +81,7 @@ class IndicatorConsumer:
                 try:
                     event = message.value
                     self.message_handler(event)
+                    self._consumer.commit()
                 except Exception as e:
                     logger.error(f"Error processing message: {e}", exc_info=True)
                     # Continue processing other messages

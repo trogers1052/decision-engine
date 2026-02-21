@@ -52,6 +52,8 @@ class RulesCache:
                 db=self.db,
                 password=self.password if self.password else None,
                 decode_responses=True,
+                socket_connect_timeout=5,
+                socket_timeout=5,
             )
             self._redis.ping()
             logger.info(f"Rules cache connected to Redis at {self.host}:{self.port}")
@@ -63,7 +65,10 @@ class RulesCache:
     def close(self) -> None:
         """Close Redis connection."""
         if self._redis:
-            self._redis.close()
+            try:
+                self._redis.close()
+            except Exception:
+                pass
             self._redis = None
 
     def publish_rules(self, config: Dict[str, Any]) -> bool:
@@ -174,6 +179,8 @@ class RulesClient:
                 db=self.db,
                 password=self.password if self.password else None,
                 decode_responses=True,
+                socket_connect_timeout=5,
+                socket_timeout=5,
             )
             self._redis.ping()
             logger.info(f"Rules client connected to Redis at {self.host}:{self.port}")
@@ -185,7 +192,10 @@ class RulesClient:
     def close(self) -> None:
         """Close Redis connection."""
         if self._redis:
-            self._redis.close()
+            try:
+                self._redis.close()
+            except Exception:
+                pass
             self._redis = None
 
     def get_config(self, force_refresh: bool = False) -> Optional[Dict]:

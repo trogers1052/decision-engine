@@ -56,6 +56,8 @@ class DecisionProducer:
                 acks="all",
                 retries=3,
                 retry_backoff_ms=1000,
+                request_timeout_ms=30000,
+                max_block_ms=30000,
             )
 
             logger.info("Successfully connected to Kafka producer")
@@ -238,8 +240,8 @@ class DecisionProducer:
         """Close the Kafka producer connection."""
         if self._producer:
             try:
-                self._producer.flush()
-                self._producer.close()
+                self._producer.flush(timeout=10)
+                self._producer.close(timeout=10)
                 logger.info("Kafka producer closed")
             except Exception as e:
                 logger.error(f"Error closing Kafka producer: {e}")

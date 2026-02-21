@@ -127,6 +127,7 @@ class ChecklistEvaluator:
                 password=self._password or None,
                 decode_responses=True,
                 socket_connect_timeout=3,
+                socket_timeout=3,
             )
             self._client.ping()
             logger.info(

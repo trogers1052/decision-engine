@@ -173,6 +173,8 @@ class StateManager:
         with self._lock:
             return list(self._states.keys())
 
+    MAX_TRACKED_SYMBOLS = 1000
+
     def clear_stale_signals(self, max_age_seconds: int = 300):
         """Clear signals older than max_age_seconds."""
         with self._lock:
@@ -188,6 +190,26 @@ class StateManager:
 
             if cleared > 0:
                 logger.info(f"Cleared {cleared} stale signals (older than {max_age_seconds}s)")
+
+    def evict_stale_states(self, max_age_seconds: int = 86400):
+        """Remove symbol states with no updates for max_age_seconds (default 24h).
+
+        Symbols with open positions are never evicted.
+        """
+        with self._lock:
+            if len(self._states) <= self.MAX_TRACKED_SYMBOLS:
+                return
+            now = datetime.utcnow()
+            to_remove = []
+            for symbol, state in self._states.items():
+                if state.has_position:
+                    continue
+                if state.last_update and (now - state.last_update).total_seconds() > max_age_seconds:
+                    to_remove.append(symbol)
+            for symbol in to_remove:
+                del self._states[symbol]
+            if to_remove:
+                logger.info(f"Evicted {len(to_remove)} stale symbol states (>{max_age_seconds}s old)")
 
     def get_summary(self) -> Dict[str, int]:
         """Get a summary of current state."""

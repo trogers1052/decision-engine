@@ -204,6 +204,10 @@ class TradePlanEngine:
         # Step 5: Targets
         # ----------------------------------------------------------------
         risk_per_share = entry_price - raw_stop
+        if risk_per_share <= 0:
+            raise ValueError(
+                f"Stop price {raw_stop:.4f} >= entry price {entry_price:.4f} for {symbol}"
+            )
         target_1 = entry_price + (risk_per_share * 2.0)
         target_2 = entry_price + (risk_per_share * 3.0)
         rr_ratio = (target_1 - entry_price) / risk_per_share  # always 2.0
@@ -468,6 +472,7 @@ class TradePlanEngine:
                     "db": self._redis_db,
                     "decode_responses": True,
                     "socket_connect_timeout": 2,
+                    "socket_timeout": 2,
                 }
                 if self._redis_password:
                     kwargs["password"] = self._redis_password

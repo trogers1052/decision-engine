@@ -4,7 +4,7 @@ Main decision engine service.
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 import redis
@@ -525,10 +525,18 @@ class DecisionEngineService:
         if signal.aggregate_confidence < self.settings.min_publish_confidence:
             return False
 
+        # Evict stale debounce entries to prevent unbounded growth
+        now = datetime.utcnow()
+        if len(self._last_publish) > 500:
+            cutoff = now - timedelta(hours=1)
+            self._last_publish = {
+                s: t for s, t in self._last_publish.items() if t > cutoff
+            }
+
         # Check debounce
         last = self._last_publish.get(symbol)
         if last:
-            elapsed = (datetime.utcnow() - last).total_seconds()
+            elapsed = (now - last).total_seconds()
             if elapsed < self.settings.debounce_seconds:
                 return False
 
@@ -573,6 +581,9 @@ class DecisionEngineService:
 
         self._last_ranking_publish = now
 
+        # Periodically evict stale symbol states to bound memory
+        self.state_manager.evict_stale_states()
+
         # Log summary
         summary = self.state_manager.get_summary()
         logger.info(
@@ -609,9 +620,10 @@ class DecisionEngineService:
         """Load existing positions from Redis on startup.
 
         robinhood-sync stores positions at 'robinhood:positions' as a hash
-        with symbol → JSON position data. This ensures we know about existing
+        with symbol -> JSON position data. This ensures we know about existing
         positions even after a service restart.
         """
+        client = None
         try:
             client = redis.Redis(
                 host=self.settings.redis_host,
@@ -619,6 +631,8 @@ class DecisionEngineService:
                 password=self.settings.redis_password or None,
                 db=self.settings.redis_db,
                 decode_responses=True,
+                socket_connect_timeout=5,
+                socket_timeout=5,
             )
 
             positions_data = client.hgetall("robinhood:positions")
@@ -643,10 +657,14 @@ class DecisionEngineService:
             if loaded_count > 0:
                 logger.info(f"Loaded {loaded_count} existing positions from Redis")
 
-            client.close()
-
         except redis.RedisError as e:
             logger.warning(f"Failed to load positions from Redis: {e}")
+        finally:
+            if client:
+                try:
+                    client.close()
+                except Exception:
+                    pass
 
     # =========================================================================
     # Service Lifecycle

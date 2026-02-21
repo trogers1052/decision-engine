@@ -55,8 +55,9 @@ class PositionTracker:
         self.on_position_close = on_position_close
         self.on_scale_in = on_scale_in
 
-        # Track positions internally
+        # Track positions internally (guarded by _lock for thread safety)
         self._positions: dict = {}  # symbol -> {"shares": x, "avg_cost": y}
+        self._lock = threading.Lock()
 
     def connect(self) -> bool:
         """Connect to Kafka."""
@@ -69,6 +70,8 @@ class PositionTracker:
                 enable_auto_commit=True,
                 value_deserializer=lambda m: m,  # Keep as bytes, decode in handler
                 consumer_timeout_ms=1000,  # 1 second poll timeout
+                request_timeout_ms=30000,
+                session_timeout_ms=30000,
             )
             logger.info(f"PositionTracker connected, subscribed to {self.topic}")
             return True
@@ -163,77 +166,83 @@ class PositionTracker:
         timestamp: Optional[datetime],
     ):
         """Handle a buy order."""
-        if symbol in self._positions:
-            # Scale-in to existing position
-            pos = self._positions[symbol]
-            old_shares = pos["shares"]
-            old_cost = pos["avg_cost"] * old_shares
-            new_shares = old_shares + quantity
-            new_cost = old_cost + (price * quantity)
-            new_avg = new_cost / new_shares
+        with self._lock:
+            if symbol in self._positions:
+                # Scale-in to existing position
+                pos = self._positions[symbol]
+                old_shares = pos["shares"]
+                old_cost = pos["avg_cost"] * old_shares
+                new_shares = old_shares + quantity
+                new_cost = old_cost + (price * quantity)
+                new_avg = new_cost / new_shares
 
-            pos["shares"] = new_shares
-            pos["avg_cost"] = new_avg
-            pos["scale_in_count"] = pos.get("scale_in_count", 0) + 1
+                pos["shares"] = new_shares
+                pos["avg_cost"] = new_avg
+                pos["scale_in_count"] = pos.get("scale_in_count", 0) + 1
 
-            logger.info(
-                f"Scale-in: {symbol} +{quantity} @ ${price:.2f}, "
-                f"new avg: ${new_avg:.2f}, total: {new_shares} shares"
-            )
+                logger.info(
+                    f"Scale-in: {symbol} +{quantity} @ ${price:.2f}, "
+                    f"new avg: ${new_avg:.2f}, total: {new_shares} shares"
+                )
 
-            if self.on_scale_in:
-                self.on_scale_in(symbol, price, quantity)
+                if self.on_scale_in:
+                    self.on_scale_in(symbol, price, quantity)
 
-        else:
-            # New position
-            self._positions[symbol] = {
-                "shares": quantity,
-                "avg_cost": price,
-                "entry_price": price,
-                "scale_in_count": 0,
-            }
+            else:
+                # New position
+                self._positions[symbol] = {
+                    "shares": quantity,
+                    "avg_cost": price,
+                    "entry_price": price,
+                    "scale_in_count": 0,
+                }
 
-            logger.info(f"New position: {symbol} {quantity} shares @ ${price:.2f}")
+                logger.info(f"New position: {symbol} {quantity} shares @ ${price:.2f}")
 
-            if self.on_position_open:
-                self.on_position_open(symbol, price, quantity, timestamp)
+                if self.on_position_open:
+                    self.on_position_open(symbol, price, quantity, timestamp)
 
     def _handle_sell(self, symbol: str, price: float, quantity: float):
         """Handle a sell order."""
-        if symbol not in self._positions:
-            logger.warning(f"Sell for {symbol} but no position tracked")
-            return
+        with self._lock:
+            if symbol not in self._positions:
+                logger.warning(f"Sell for {symbol} but no position tracked")
+                return
 
-        pos = self._positions[symbol]
-        if quantity > pos.get("shares", 0):
-            logger.warning(
-                f"SELL quantity {quantity} exceeds position {pos.get('shares', 0)} "
-                f"for {symbol}, capping to position size"
-            )
-            quantity = pos.get("shares", 0)
-        pos["shares"] -= quantity
+            pos = self._positions[symbol]
+            if quantity > pos.get("shares", 0):
+                logger.warning(
+                    f"SELL quantity {quantity} exceeds position {pos.get('shares', 0)} "
+                    f"for {symbol}, capping to position size"
+                )
+                quantity = pos.get("shares", 0)
+            pos["shares"] -= quantity
 
-        if pos["shares"] <= 0:
-            # Position closed
-            del self._positions[symbol]
-            logger.info(f"Position closed: {symbol} @ ${price:.2f}")
+            if pos["shares"] <= 0:
+                # Position closed
+                del self._positions[symbol]
+                logger.info(f"Position closed: {symbol} @ ${price:.2f}")
 
-            if self.on_position_close:
-                self.on_position_close(symbol)
-        else:
-            logger.info(
-                f"Partial sell: {symbol} -{quantity} @ ${price:.2f}, "
-                f"remaining: {pos['shares']} shares"
-            )
+                if self.on_position_close:
+                    self.on_position_close(symbol)
+            else:
+                logger.info(
+                    f"Partial sell: {symbol} -{quantity} @ ${price:.2f}, "
+                    f"remaining: {pos['shares']} shares"
+                )
 
     def has_position(self, symbol: str) -> bool:
         """Check if we have a position in a symbol."""
-        return symbol in self._positions
+        with self._lock:
+            return symbol in self._positions
 
     def get_position(self, symbol: str) -> Optional[dict]:
         """Get position info for a symbol."""
-        return self._positions.get(symbol)
+        with self._lock:
+            pos = self._positions.get(symbol)
+            return dict(pos) if pos else None
 
     def get_all_positions(self) -> dict:
         """Get all open positions."""
-        return self._positions.copy()
+        with self._lock:
+            return {s: dict(p) for s, p in self._positions.items()}
