@@ -155,34 +155,45 @@ class ChecklistEvaluator:
 
     def evaluate(
         self,
-        trade_plan: TradePlan,
+        trade_plan: Optional[TradePlan],
         regime_id: str,
         symbol: str,
     ) -> ChecklistResult:
         """
         Run all five checks and return a ChecklistResult.
 
+        trade_plan may be None if plan generation failed or the trade plan
+        engine is disabled.  In that case checks 1-3 (stop, sizing, R:R)
+        default to False conservatively — you can't verify them, so you
+        shouldn't pretend they passed.  Checks 4 (earnings) and 5 (regime)
+        are fully independent and always run.
+
+        This ensures the earnings hard gate fires even when trade plan
+        generation throws an exception.
+
         Args:
-            trade_plan: The generated TradePlan for this signal.
+            trade_plan: The generated TradePlan, or None if unavailable.
             regime_id:  Current market regime (BULL / SIDEWAYS / BEAR / UNKNOWN).
             symbol:     Ticker symbol (used to look up earnings in Redis).
         """
         result = ChecklistResult(regime_id=regime_id)
 
-        # 1. Stop loss defined
-        result.stop_loss_defined = trade_plan.stop_price > 0
+        if trade_plan is not None:
+            # 1. Stop loss defined
+            result.stop_loss_defined = trade_plan.stop_price > 0
 
-        # 2. Position sizing
-        result.risk_pct = trade_plan.risk_pct
-        result.position_sized_correctly = trade_plan.risk_pct <= MAX_RISK_PCT_REVIEW
+            # 2. Position sizing
+            result.risk_pct = trade_plan.risk_pct
+            result.position_sized_correctly = trade_plan.risk_pct <= MAX_RISK_PCT_REVIEW
 
-        # 3. R:R ratio
-        result.rr_ratio = trade_plan.risk_reward_ratio
-        result.rr_ratio_acceptable = (
-            trade_plan.plan_valid and trade_plan.risk_reward_ratio >= MIN_RR_RATIO
-        )
+            # 3. R:R ratio
+            result.rr_ratio = trade_plan.risk_reward_ratio
+            result.rr_ratio_acceptable = (
+                trade_plan.plan_valid and trade_plan.risk_reward_ratio >= MIN_RR_RATIO
+            )
+        # else: checks 1-3 remain False (conservative default)
 
-        # 4. Earnings imminence (read from Redis)
+        # 4. Earnings imminence (read from Redis — always runs)
         earnings = self._get_earnings(symbol)
         if earnings is None:
             # Key absent → no known upcoming earnings → safe
@@ -194,7 +205,7 @@ class ChecklistEvaluator:
             result.earnings_verified = earnings.get("verified")
             result.no_earnings_imminent = days_away > EARNINGS_HARD_GATE_DAYS
 
-        # 5. Regime compatibility
+        # 5. Regime compatibility (always runs)
         result.regime_compatible = regime_id not in BEAR_REGIMES
 
         # Aggregate
@@ -212,7 +223,10 @@ class ChecklistEvaluator:
             earnings_days is not None
             and earnings_days <= EARNINGS_HARD_GATE_DAYS
         )
-        is_size_blocked = trade_plan.risk_pct > MAX_RISK_PCT_BLOCKED
+        # Size block only applies when we have plan data
+        is_size_blocked = (
+            trade_plan is not None and trade_plan.risk_pct > MAX_RISK_PCT_BLOCKED
+        )
 
         if is_earnings_blocked or is_size_blocked:
             result.status = "BLOCKED"

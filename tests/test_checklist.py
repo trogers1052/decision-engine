@@ -314,6 +314,61 @@ class TestStatusAggregation(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# No trade plan (plan engine disabled or threw)
+# ---------------------------------------------------------------------------
+
+class TestNoPlanPath(unittest.TestCase):
+    """trade_plan=None → checks 1-3 are False; checks 4 and 5 still run."""
+
+    def test_no_plan_checks_1_3_are_false(self):
+        ev = _make_evaluator(earnings_payload=None)
+        result = ev.evaluate(None, "BULL", "WPM")
+        self.assertFalse(result.stop_loss_defined)
+        self.assertFalse(result.position_sized_correctly)
+        self.assertFalse(result.rr_ratio_acceptable)
+
+    def test_no_plan_earnings_check_still_runs_safe(self):
+        ev = _make_evaluator(earnings_payload=None)
+        result = ev.evaluate(None, "BULL", "WPM")
+        self.assertTrue(result.no_earnings_imminent)
+
+    def test_no_plan_regime_check_still_runs(self):
+        ev = _make_evaluator(earnings_payload=None)
+        result = ev.evaluate(None, "BULL", "WPM")
+        self.assertTrue(result.regime_compatible)
+
+    def test_no_plan_status_is_review_when_no_earnings(self):
+        """No plan + no earnings → can't pass checks 1-3 → REVIEW."""
+        ev = _make_evaluator(earnings_payload=None)
+        result = ev.evaluate(None, "BULL", "WPM")
+        self.assertEqual(result.status, "REVIEW")
+
+    def test_no_plan_earnings_imminent_still_blocks(self):
+        """The whole point: earnings hard gate fires even with no trade plan."""
+        ev = _make_evaluator(_earnings(days_away=2))
+        result = ev.evaluate(None, "BULL", "WPM")
+        self.assertFalse(result.no_earnings_imminent)
+        self.assertEqual(result.status, "BLOCKED")
+
+    def test_no_plan_size_blocked_does_not_fire(self):
+        """Size block requires plan data — with no plan it can't trigger."""
+        ev = _make_evaluator(earnings_payload=None)
+        result = ev.evaluate(None, "BULL", "WPM")
+        # risk_pct is 0.0 (default) — should not be BLOCKED on size
+        self.assertNotEqual(result.status, "BLOCKED")
+
+    def test_no_plan_risk_pct_defaults_to_zero(self):
+        ev = _make_evaluator(earnings_payload=None)
+        result = ev.evaluate(None, "BULL", "WPM")
+        self.assertEqual(result.risk_pct, 0.0)
+
+    def test_no_plan_rr_ratio_defaults_to_zero(self):
+        ev = _make_evaluator(earnings_payload=None)
+        result = ev.evaluate(None, "BULL", "WPM")
+        self.assertEqual(result.rr_ratio, 0.0)
+
+
+# ---------------------------------------------------------------------------
 # Redis degradation
 # ---------------------------------------------------------------------------
 

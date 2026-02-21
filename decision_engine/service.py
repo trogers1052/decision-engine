@@ -295,10 +295,11 @@ class DecisionEngineService:
                             exc_info=True,
                         )
 
-                # Evaluate pre-trade checklist for BUY signals with a trade plan
+                # Evaluate pre-trade checklist for all BUY signals.
+                # trade_plan may be None (plan engine disabled or threw) — the
+                # checklist still runs so the earnings hard gate always fires.
                 if (
                     self.checklist_evaluator is not None
-                    and trade_plan is not None
                     and aggregated_signal.signal_type == SignalType.BUY
                 ):
                     try:
