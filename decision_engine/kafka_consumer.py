@@ -56,8 +56,8 @@ class IndicatorConsumer:
                 # Use 'earliest' to prevent data loss on restart
                 auto_offset_reset="earliest",
                 enable_auto_commit=False,
-                request_timeout_ms=30000,
                 session_timeout_ms=30000,
+                request_timeout_ms=40000,  # must be > session_timeout_ms
                 heartbeat_interval_ms=10000,
                 max_poll_interval_ms=300000,
             )
