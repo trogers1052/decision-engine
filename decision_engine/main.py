@@ -6,8 +6,11 @@ BUY/SELL/WATCH signals with cross-stock rankings.
 """
 
 import logging
+import os
 import signal
 import sys
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from .config import Settings
 from .service import DecisionEngineService
@@ -33,9 +36,34 @@ def signal_handler(signum, frame):
     sys.exit(0)
 
 
+def _start_health_server() -> None:
+    """Start a minimal HTTP health server on a daemon thread."""
+    port = int(os.environ.get("HEALTH_PORT", "8080"))
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/health":
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"ok")
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+        def log_message(self, *args):
+            pass  # suppress HTTP access logs
+
+    server = HTTPServer(("", port), _Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    logger.info(f"Health server listening on :{port}/health")
+
+
 def main():
     """Main entry point."""
     global _service
+
+    _start_health_server()
 
     logger.info("Decision Engine starting...")
 
