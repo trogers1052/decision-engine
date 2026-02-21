@@ -12,6 +12,7 @@ import redis
 from .config import Settings
 from .kafka_consumer import IndicatorConsumer
 from .kafka_producer import DecisionProducer
+from .checklist import ChecklistEvaluator, ChecklistResult
 from .market_context import MarketContextReader
 from .state_manager import StateManager
 from .position_tracker import PositionTracker
@@ -85,6 +86,9 @@ class DecisionEngineService:
 
         # Market context reader (reads regime from context-service via Redis)
         self.market_context_reader: Optional[MarketContextReader] = None
+
+        # Pre-trade checklist evaluator
+        self.checklist_evaluator: Optional[ChecklistEvaluator] = None
 
     def initialize(self) -> bool:
         """Initialize all connections and load rules."""
@@ -191,6 +195,15 @@ class DecisionEngineService:
             )
             self.market_context_reader.start()
 
+            # Initialize pre-trade checklist evaluator
+            self.checklist_evaluator = ChecklistEvaluator(
+                redis_host=self.settings.redis_host,
+                redis_port=self.settings.redis_port,
+                redis_db=self.settings.redis_db,
+                redis_password=self.settings.redis_password or "",
+            )
+            self.checklist_evaluator.connect()  # best-effort; degrades gracefully
+
             # Initialize risk engine if available and enabled
             if HAS_RISK_ENGINE and self._risk_enabled:
                 try:
@@ -263,6 +276,7 @@ class DecisionEngineService:
 
                 # Generate trade plan for BUY signals before publishing
                 trade_plan: Optional[TradePlan] = None
+                checklist_result: Optional[ChecklistResult] = None
                 if (
                     self.trade_plan_engine is not None
                     and aggregated_signal.signal_type == SignalType.BUY
@@ -279,6 +293,23 @@ class DecisionEngineService:
                         logger.error(
                             f"Trade plan generation failed for {symbol}: {exc}",
                             exc_info=True,
+                        )
+
+                # Evaluate pre-trade checklist for BUY signals with a trade plan
+                if (
+                    self.checklist_evaluator is not None
+                    and trade_plan is not None
+                    and aggregated_signal.signal_type == SignalType.BUY
+                ):
+                    try:
+                        checklist_result = self.checklist_evaluator.evaluate(
+                            trade_plan=trade_plan,
+                            regime_id=aggregated_signal.regime_id,
+                            symbol=symbol,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            f"Checklist evaluation failed for {symbol}: {exc}"
                         )
 
                 # Publish if above threshold and not debounced
@@ -309,6 +340,7 @@ class DecisionEngineService:
                             indicators,
                             risk_result=risk_result,
                             trade_plan=trade_plan,
+                            checklist_result=checklist_result,
                         )
                         self._last_publish[symbol] = datetime.utcnow()
 
@@ -667,5 +699,7 @@ class DecisionEngineService:
             self.rules_cache.close()
         if self.market_context_reader:
             self.market_context_reader.stop()
+        if self.checklist_evaluator:
+            self.checklist_evaluator.close()
 
         logger.info("Decision engine stopped")

@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional
 from kafka import KafkaProducer
 from kafka.errors import KafkaError
 
+from .checklist import ChecklistResult
 from .models.signals import AggregatedSignal
 from .models.trade_plan import TradePlan
 
@@ -70,6 +71,7 @@ class DecisionProducer:
         indicators_snapshot: Dict[str, float],
         risk_result: Optional[Any] = None,
         trade_plan: Optional[TradePlan] = None,
+        checklist_result: Optional[ChecklistResult] = None,
     ) -> bool:
         """
         Publish a decision event to Kafka.
@@ -79,6 +81,7 @@ class DecisionProducer:
             indicators_snapshot: Current indicator values.
             risk_result: Optional RiskCheckResult from risk engine.
             trade_plan: Optional TradePlan with entry/stop/target/R:R details.
+            checklist_result: Optional ChecklistResult from pre-trade checklist.
 
         Returns:
             True if published successfully, False otherwise.
@@ -144,6 +147,10 @@ class DecisionProducer:
                     "rr_warning": trade_plan.rr_warning,
                     "warnings": trade_plan.warnings,
                 }
+
+            # Include pre-trade checklist if available
+            if checklist_result is not None:
+                event["data"]["checklist"] = checklist_result.to_dict()
 
             # Include risk assessment if available
             if risk_result is not None:
