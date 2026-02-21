@@ -121,6 +121,7 @@ class TradePlanEngine:
         # Account balance cache
         self._cached_balance: Optional[float] = None
         self._balance_cached_at: Optional[datetime] = None
+        self._redis_failure_until: Optional[float] = None
 
         # PositionSizer — max 2% risk, max 20% position
         if _HAS_POSITION_SIZER:
@@ -455,6 +456,10 @@ class TradePlanEngine:
         if not _HAS_REDIS:
             return None
 
+        import time
+        if self._redis_failure_until and time.time() < self._redis_failure_until:
+            return None
+
         try:
             if self._redis_client is None:
                 kwargs: dict = {
@@ -474,8 +479,9 @@ class TradePlanEngine:
             return float(raw)
 
         except Exception as exc:
-            logger.debug(f"Redis balance fetch failed: {exc}")
-            self._redis_client = None  # Reset so we reconnect next time
+            logger.warning(f"Redis unavailable for balance fetch: {exc}")
+            self._redis_client = None
+            self._redis_failure_until = time.time() + 60
             return None
 
     # ------------------------------------------------------------------

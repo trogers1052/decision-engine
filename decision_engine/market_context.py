@@ -160,6 +160,7 @@ class MarketContextReader:
         if not self._client:
             return
         try:
+            # Fetch from Redis WITHOUT holding the lock
             raw = self._client.get(self._key)
             if not raw:
                 logger.debug(
@@ -171,14 +172,16 @@ class MarketContextReader:
             new_regime = str(data.get("regime", "UNKNOWN")).upper()
             new_confidence = float(data.get("regime_confidence", 0.0))
 
-            with self._lock:
-                if new_regime != self._regime:
-                    logger.info(
-                        f"Market regime: {self._regime} → {new_regime} "
-                        f"(confidence={new_confidence:.2f})"
-                    )
-                self._regime = new_regime
-                self._regime_confidence = new_confidence
-
         except (redis.RedisError, json.JSONDecodeError, ValueError, TypeError) as exc:
             logger.warning(f"Failed to refresh market context from Redis: {exc}")
+            return
+
+        # Only hold the lock for the assignment, not during I/O
+        with self._lock:
+            if new_regime != self._regime:
+                logger.info(
+                    f"Market regime: {self._regime} → {new_regime} "
+                    f"(confidence={new_confidence:.2f})"
+                )
+            self._regime = new_regime
+            self._regime_confidence = new_confidence

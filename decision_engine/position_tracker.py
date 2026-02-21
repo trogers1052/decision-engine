@@ -205,6 +205,12 @@ class PositionTracker:
             return
 
         pos = self._positions[symbol]
+        if quantity > pos.get("shares", 0):
+            logger.warning(
+                f"SELL quantity {quantity} exceeds position {pos.get('shares', 0)} "
+                f"for {symbol}, capping to position size"
+            )
+            quantity = pos.get("shares", 0)
         pos["shares"] -= quantity
 
         if pos["shares"] <= 0:
