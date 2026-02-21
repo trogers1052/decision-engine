@@ -114,13 +114,18 @@ class MarketContextReader:
     def stop(self) -> None:
         """Stop the background thread and close the Redis connection."""
         self._stop_event.set()
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=5)
+        # Close Redis FIRST to interrupt any blocking I/O in _refresh(),
+        # then join the thread. Otherwise the thread can block for up to
+        # refresh_interval + socket_timeout before noticing the stop event.
         if self._client:
             try:
                 self._client.close()
             except Exception:
                 pass
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=10)
+            if self._thread.is_alive():
+                logger.warning("MarketContextReader thread did not exit cleanly")
         logger.info("MarketContextReader stopped")
 
     # ------------------------------------------------------------------

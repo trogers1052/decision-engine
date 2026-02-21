@@ -95,10 +95,16 @@ class PositionTracker:
     def stop(self):
         """Stop consuming."""
         self._running = False
-        if self._thread:
-            self._thread.join(timeout=5)
+        # Close consumer FIRST to interrupt blocked poll(), then join thread.
         if self.consumer:
-            self.consumer.close()
+            try:
+                self.consumer.close()
+            except Exception as e:
+                logger.warning(f"Error closing PositionTracker consumer: {e}")
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=10)
+            if self._thread.is_alive():
+                logger.warning("PositionTracker thread did not exit cleanly")
         logger.info("PositionTracker stopped")
 
     def _consume_loop(self):

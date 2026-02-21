@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -42,6 +43,7 @@ MAX_RISK_PCT_REVIEW = 2.0      # risk > 2% but ≤ 5% → REVIEW (positioned_siz
 
 MIN_RR_RATIO = 2.0             # minimum acceptable R:R
 BEAR_REGIMES = {"BEAR"}        # regimes considered regime-incompatible
+EARNINGS_STALENESS_HOURS = 24  # reject earnings data older than this
 
 
 @dataclass
@@ -195,8 +197,17 @@ class ChecklistEvaluator:
 
         # 4. Earnings imminence (read from Redis — always runs)
         earnings = self._get_earnings(symbol)
-        if earnings is None:
-            # Key absent → no known upcoming earnings → safe
+        if earnings is None and self._client is None:
+            # Redis is DOWN — we can't verify earnings. MOH lesson:
+            # assume NOT safe (conservative). Status becomes REVIEW so
+            # the trader sees the failed check and can verify manually.
+            logger.warning(
+                f"Earnings check unavailable for {symbol} (Redis down) — "
+                f"marking no_earnings_imminent=False (conservative)"
+            )
+            result.no_earnings_imminent = False
+        elif earnings is None:
+            # Redis is up but no earnings key → no known upcoming earnings → safe
             result.no_earnings_imminent = True
         else:
             days_away = earnings.get("days_away", 999)
@@ -258,7 +269,26 @@ class ChecklistEvaluator:
         try:
             key = f"{self.EARNINGS_KEY_PREFIX}:{symbol}"
             raw = self._client.get(key)
-            return json.loads(raw) if raw else None
+            if not raw:
+                return None
+            data = json.loads(raw)
+
+            # Reject stale earnings data — if robinhood-sync hasn't refreshed
+            # the key in 24h the data may be outdated and dangerous to trust.
+            updated_at = data.get("updated_at")
+            if updated_at:
+                try:
+                    age_hours = (time.time() - float(updated_at)) / 3600
+                    if age_hours > EARNINGS_STALENESS_HOURS:
+                        logger.warning(
+                            f"Earnings data for {symbol} is {age_hours:.1f}h old "
+                            f"(limit {EARNINGS_STALENESS_HOURS}h) — treating as absent"
+                        )
+                        return None
+                except (ValueError, TypeError):
+                    pass  # updated_at not a valid timestamp — use data as-is
+
+            return data
         except (redis.RedisError, json.JSONDecodeError) as exc:
             logger.debug(f"Could not read earnings for {symbol}: {exc}")
             return None

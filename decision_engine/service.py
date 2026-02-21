@@ -4,6 +4,7 @@ Main decision engine service.
 
 import json
 import logging
+import math
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
@@ -250,6 +251,21 @@ class DecisionEngineService:
                 logger.debug("Missing symbol or indicators in event")
                 return
 
+            # Input validation at service boundary
+            if not isinstance(symbol, str) or len(symbol) > 10:
+                logger.warning(f"Invalid symbol in event: {symbol!r}")
+                return
+            if not isinstance(indicators, dict):
+                logger.warning(f"Indicators not a dict for {symbol}")
+                return
+            # Reject non-finite indicator values early
+            for ind_key, ind_val in indicators.items():
+                if isinstance(ind_val, float) and (math.isnan(ind_val) or math.isinf(ind_val)):
+                    logger.warning(
+                        f"Non-finite indicator {ind_key}={ind_val} for {symbol} — skipping event"
+                    )
+                    return
+
             # Skip if data quality is not ready
             if data_quality and not data_quality.get("is_ready", True):
                 logger.debug(f"Skipping {symbol}: data not ready")
@@ -289,9 +305,16 @@ class DecisionEngineService:
                             logger.warning(
                                 f"Trade plan R:R warning for {symbol}: {trade_plan.rr_warning}"
                             )
+                        if trade_plan.warnings:
+                            for w in trade_plan.warnings:
+                                logger.warning(f"Trade plan warning for {symbol}: {w}")
                     except Exception as exc:
+                        # Signal will publish WITHOUT a trade plan — the alert
+                        # shows the signal but not entry/stop/target details.
+                        # This is better than silently dropping the signal.
                         logger.error(
-                            f"Trade plan generation failed for {symbol}: {exc}",
+                            f"Trade plan generation failed for {symbol}: {exc} — "
+                            f"signal will publish without trade plan",
                             exc_info=True,
                         )
 
@@ -323,17 +346,27 @@ class DecisionEngineService:
                         self.risk_adapter
                         and aggregated_signal.signal_type == SignalType.BUY
                     ):
-                        risk_result = self.risk_adapter.check_risk(
-                            symbol=symbol,
-                            signal_type="BUY",
-                            confidence=aggregated_signal.aggregate_confidence,
-                            indicators=indicators,
-                        )
-                        if not risk_result.passes:
-                            logger.info(
-                                f"Risk check rejected {symbol}: {risk_result.reason}"
+                        try:
+                            risk_result = self.risk_adapter.check_risk(
+                                symbol=symbol,
+                                signal_type="BUY",
+                                confidence=aggregated_signal.aggregate_confidence,
+                                indicators=indicators,
                             )
-                            should_publish = False
+                            if not risk_result.passes:
+                                logger.info(
+                                    f"Risk check rejected {symbol}: {risk_result.reason}"
+                                )
+                                should_publish = False
+                        except Exception as risk_exc:
+                            # Fail-open: risk engine error should not silently kill signals.
+                            # Publish the signal without risk data — trader makes the call.
+                            logger.error(
+                                f"Risk check error for {symbol}: {risk_exc} — "
+                                f"publishing signal without risk assessment",
+                                exc_info=True,
+                            )
+                            risk_result = None
 
                     if should_publish:
                         self.producer.publish_decision(
@@ -450,9 +483,11 @@ class DecisionEngineService:
         if buy_signals and len(buy_signals) > len(sell_signals):
             # Check if we have enough rules agreeing (consensus)
             if require_consensus and len(buy_signals) < consensus_min_rules:
-                logger.debug(
-                    f"Skipping BUY for {symbol}: only {len(buy_signals)} rules triggered, "
-                    f"need {consensus_min_rules} for consensus"
+                logger.info(
+                    f"Consensus gate: skipping BUY for {symbol} — "
+                    f"{len(buy_signals)} rule(s) triggered "
+                    f"({', '.join(s.rule_name for s in buy_signals)}), "
+                    f"need {consensus_min_rules}"
                 )
                 return None
             return self._aggregate_signals(
@@ -461,9 +496,11 @@ class DecisionEngineService:
         elif sell_signals and len(sell_signals) > len(buy_signals):
             # Check if we have enough rules agreeing (consensus)
             if require_consensus and len(sell_signals) < consensus_min_rules:
-                logger.debug(
-                    f"Skipping SELL for {symbol}: only {len(sell_signals)} rules triggered, "
-                    f"need {consensus_min_rules} for consensus"
+                logger.info(
+                    f"Consensus gate: skipping SELL for {symbol} — "
+                    f"{len(sell_signals)} rule(s) triggered "
+                    f"({', '.join(s.rule_name for s in sell_signals)}), "
+                    f"need {consensus_min_rules}"
                 )
                 return None
             return self._aggregate_signals(
@@ -526,10 +563,10 @@ class DecisionEngineService:
         if signal.aggregate_confidence < self.settings.min_publish_confidence:
             return False
 
-        # Evict stale debounce entries to prevent unbounded growth
+        # Evict stale debounce entries to prevent unbounded growth on Pi
         now = datetime.utcnow()
-        if len(self._last_publish) > 500:
-            cutoff = now - timedelta(hours=1)
+        if len(self._last_publish) > 100:
+            cutoff = now - timedelta(minutes=30)
             self._last_publish = {
                 s: t for s, t in self._last_publish.items() if t > cutoff
             }

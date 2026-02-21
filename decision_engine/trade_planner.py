@@ -210,14 +210,20 @@ class TradePlanEngine:
             )
         target_1 = entry_price + (risk_per_share * 2.0)
         target_2 = entry_price + (risk_per_share * 3.0)
-        rr_ratio = (target_1 - entry_price) / risk_per_share  # always 2.0
 
-        # Resistance reference
+        # Calculate effective R:R considering nearby resistance.
+        # BB_UPPER can cap realistic upside before the mechanical 2:1 target.
+        # Targets stay at 2:1/3:1 as aspirational levels — the R:R tells
+        # the trader what they realistically get before hitting resistance.
         resistance_note: Optional[str] = None
-        if bb_upper is not None and bb_upper < target_1:
+        effective_target = target_1
+        if bb_upper is not None and bb_upper > entry_price and bb_upper < target_1:
+            effective_target = bb_upper
             resistance_note = (
-                f"BB_UPPER ${bb_upper:.2f} may act as resistance before target"
+                f"BB_UPPER ${bb_upper:.2f} may limit upside before "
+                f"2:1 target ${target_1:.2f}"
             )
+        rr_ratio = (effective_target - entry_price) / risk_per_share
 
         # Symbol-specific % target from rules.yaml exit_strategy
         symbol_target_pct: Optional[float] = (
@@ -420,6 +426,12 @@ class TradePlanEngine:
         if risk_per_share <= 0:
             return 0, 0.0, 0.0, 0.0, warnings
         shares = int(max_dollar_risk / risk_per_share)
+        if shares == 0:
+            shares = 1
+            warnings.append(
+                f"Account too small for 2% risk sizing at ${entry_price:.2f} — "
+                f"minimum 1 share (risking ${risk_per_share:.2f})"
+            )
         dollar_risk = shares * risk_per_share
         risk_pct = (dollar_risk / account_balance) * 100 if account_balance > 0 else 0.0
         position_value = shares * entry_price
@@ -486,7 +498,9 @@ class TradePlanEngine:
         except Exception as exc:
             logger.warning(f"Redis unavailable for balance fetch: {exc}")
             self._redis_client = None
-            self._redis_failure_until = time.time() + 60
+            # Short backoff — position sizing accuracy depends on fresh balance.
+            # 60s is too long; stale balance causes over/under-sizing.
+            self._redis_failure_until = time.time() + 15
             return None
 
     # ------------------------------------------------------------------

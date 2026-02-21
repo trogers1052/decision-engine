@@ -99,6 +99,55 @@ class RuleRegistry:
         return RULE_REGISTRY.get(rule_name)
 
     @staticmethod
+    def _validate_params(rule_name: str, params: dict) -> Optional[str]:
+        """
+        Validate rule parameters are within sane ranges.
+
+        Returns an error message if invalid, None if OK.
+        """
+        for key, value in params.items():
+            # Skip non-numeric parameters
+            if isinstance(value, bool):
+                continue
+            if not isinstance(value, (int, float)):
+                continue
+
+            # RSI values must be 0-100
+            rsi_keys = {
+                "threshold", "extreme_threshold", "rsi_threshold",
+                "rsi_oversold", "rsi_extreme", "rsi_recovery_min",
+                "rsi_recovery_max",
+            }
+            if key in rsi_keys:
+                if not (0 <= value <= 100):
+                    return f"{key}={value} out of RSI range [0, 100]"
+
+            # Percentage values must be non-negative and reasonable
+            pct_keys = {
+                "pullback_tolerance_pct", "breakout_threshold_pct",
+                "support_tolerance_pct", "min_trend_spread",
+            }
+            if key in pct_keys:
+                if value < 0 or value > 100:
+                    return f"{key}={value} out of range [0, 100]"
+
+            # Multiplier/boost/penalty values must be finite and non-negative
+            weight_keys = {
+                "strong_month_boost", "weak_month_penalty",
+                "min_volume_ratio", "min_trend_strength",
+            }
+            if key in weight_keys:
+                if value < 0:
+                    return f"{key}={value} must be non-negative"
+
+            # histogram_threshold can be negative (valid for MACD), just check finite
+            import math
+            if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+                return f"{key}={value} is not finite"
+
+        return None
+
+    @staticmethod
     def create_rule(rule_name: str, config: dict) -> Optional[Rule]:
         """
         Create a rule instance from configuration.
@@ -170,6 +219,12 @@ class RuleRegistry:
             if "min_volume_ratio" in config:
                 params["min_volume_ratio"] = config["min_volume_ratio"]
 
+            # Validate parameters before creating the rule
+            validation_err = RuleRegistry._validate_params(rule_name, params)
+            if validation_err:
+                logger.error(f"Invalid config for rule {rule_name}: {validation_err}")
+                return None
+
             # Create the rule with extracted params
             rule = rule_class(**params) if params else rule_class()
             return rule
@@ -202,8 +257,14 @@ class RuleRegistry:
 
             rule = RuleRegistry.create_rule(rule_name, rule_config)
             if rule:
+                weight = rule_config.get("weight", 1.0)
+                if not isinstance(weight, (int, float)) or weight <= 0:
+                    logger.warning(
+                        f"Rule {rule_name} has invalid weight={weight!r}, defaulting to 1.0"
+                    )
+                    weight = 1.0
                 rules.append(rule)
-                weights[rule.name] = rule_config.get("weight", 1.0)
+                weights[rule.name] = weight
                 logger.info(f"Loaded rule: {rule.name} (weight: {weights[rule.name]})")
 
         logger.info(f"Loaded {len(rules)} rules")

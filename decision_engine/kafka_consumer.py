@@ -83,8 +83,21 @@ class IndicatorConsumer:
                     self.message_handler(event)
                     self._consumer.commit()
                 except Exception as e:
-                    logger.error(f"Error processing message: {e}", exc_info=True)
-                    # Continue processing other messages
+                    # Log with offset details so lost messages can be investigated.
+                    # The next successful commit will advance past this offset —
+                    # for indicator events this is acceptable since the next update
+                    # for the symbol replaces the missed data within minutes.
+                    symbol = "unknown"
+                    try:
+                        symbol = message.value.get("data", {}).get("symbol", "unknown")
+                    except Exception:
+                        pass
+                    logger.error(
+                        f"Failed to process message for {symbol} at "
+                        f"offset {message.offset} "
+                        f"(partition={message.partition}): {e}",
+                        exc_info=True,
+                    )
 
         except KeyboardInterrupt:
             logger.info("Consumer interrupted by user")
