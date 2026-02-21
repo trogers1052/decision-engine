@@ -336,6 +336,21 @@ class DecisionEngineService:
                             f"Checklist evaluation failed for {symbol}: {exc}"
                         )
 
+                # Enforce BLOCKED checklist: suppress publication entirely.
+                # A BLOCKED status means a hard gate failed (e.g. earnings
+                # imminent, no stop loss defined) — the signal MUST NOT reach
+                # the alert-service or the trader may act on it.
+                if (
+                    checklist_result is not None
+                    and checklist_result.status == "BLOCKED"
+                ):
+                    logger.warning(
+                        f"Checklist BLOCKED for {symbol} — suppressing "
+                        f"{aggregated_signal.signal_type.value} signal "
+                        f"(confidence={aggregated_signal.aggregate_confidence:.2f})"
+                    )
+                    return
+
                 # Publish if above threshold and not debounced
                 if self._should_publish(symbol, aggregated_signal):
                     # Check risk for BUY signals
