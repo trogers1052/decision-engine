@@ -396,3 +396,22 @@ symbol_overrides:
 # PAAS: 48.1% WR, +14.2%, 0.17 Sharpe, -55.9% DD = not worth it
 # FCX:  52.9% WR, +15.9%, 0.18 Sharpe, -39.5% DD = not worth it
 # -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# Trade Plan Engine — deterministic entry/stop/target/R:R generation
+# Every BUY decision is enriched with a complete trade plan before publishing.
+# $0 cost — no LLM involved.
+# -----------------------------------------------------------------------------
+trade_plan_engine:
+  enabled: true
+  atr_multiplier: 2.0           # Stop = entry - (ATR_14 × atr_multiplier)
+  min_rr_ratio: 2.0             # Plans with R:R below this set plan_valid=false + rr_warning
+  stop_min_pct: 3.0             # Widen ATR stop if % distance < this (to 4%)
+  stop_max_pct: 15.0            # Cap ATR stop if % distance > this (to 10%)
+  default_account_balance: 888.80  # Fallback when Redis is unavailable
+  account_balance_redis_key: "robinhood:portfolio"  # Redis hash → total_equity field
+  validity_windows:
+    oversold_bounce: "eod"       # Valid until end of trading day
+    pullback_to_support: "2d"    # Valid for 2 trading days
+    breakout: "2h"               # Valid for 2 hours (breakouts go or fail fast)
+    signal: "eod"                # Generic signals valid until EOD

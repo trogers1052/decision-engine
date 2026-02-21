@@ -11,6 +11,7 @@ from kafka import KafkaProducer
 from kafka.errors import KafkaError
 
 from .models.signals import AggregatedSignal
+from .models.trade_plan import TradePlan
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,7 @@ class DecisionProducer:
         signal: AggregatedSignal,
         indicators_snapshot: Dict[str, float],
         risk_result: Optional[Any] = None,
+        trade_plan: Optional[TradePlan] = None,
     ) -> bool:
         """
         Publish a decision event to Kafka.
@@ -76,6 +78,7 @@ class DecisionProducer:
             signal: Aggregated signal for a symbol.
             indicators_snapshot: Current indicator values.
             risk_result: Optional RiskCheckResult from risk engine.
+            trade_plan: Optional TradePlan with entry/stop/target/R:R details.
 
         Returns:
             True if published successfully, False otherwise.
@@ -112,6 +115,33 @@ class DecisionProducer:
                     },
                 },
             }
+
+            # Include trade plan if available
+            if trade_plan is not None:
+                event["data"]["trade_plan"] = {
+                    "setup_type": trade_plan.setup_type.value,
+                    "rules_contributed": trade_plan.rules_contributed,
+                    "entry_price": trade_plan.entry_price,
+                    "entry_zone_low": trade_plan.entry_zone_low,
+                    "entry_zone_high": trade_plan.entry_zone_high,
+                    "valid_until": trade_plan.valid_until.isoformat(),
+                    "stop_price": trade_plan.stop_price,
+                    "stop_method": trade_plan.stop_method,
+                    "stop_pct": trade_plan.stop_pct,
+                    "target_1": trade_plan.target_1,
+                    "target_2": trade_plan.target_2,
+                    "symbol_target_pct": trade_plan.symbol_target_pct,
+                    "resistance_note": trade_plan.resistance_note,
+                    "risk_reward_ratio": trade_plan.risk_reward_ratio,
+                    "shares": trade_plan.shares,
+                    "dollar_risk": trade_plan.dollar_risk,
+                    "risk_pct": trade_plan.risk_pct,
+                    "position_value": trade_plan.position_value,
+                    "invalidation_price": trade_plan.invalidation_price,
+                    "plan_valid": trade_plan.plan_valid,
+                    "rr_warning": trade_plan.rr_warning,
+                    "warnings": trade_plan.warnings,
+                }
 
             # Include risk assessment if available
             if risk_result is not None:

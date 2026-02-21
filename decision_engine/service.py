@@ -15,7 +15,9 @@ from .ranker import SymbolRanker, RankingCriteria
 from .rules.base import Rule, SymbolContext, SignalType
 from .rules.registry import RuleRegistry
 from .models.signals import Signal, AggregatedSignal, ConfidenceAggregator
+from .models.trade_plan import TradePlan
 from .rules_cache import RulesCache
+from .trade_planner import TradePlanEngine
 
 # Risk engine integration (optional)
 try:
@@ -67,6 +69,9 @@ class DecisionEngineService:
         self.risk_adapter = None
         self._risk_enabled = getattr(settings, 'risk_engine_enabled', True)
 
+        # Trade plan engine (instantiated after config is loaded in initialize())
+        self.trade_plan_engine: Optional[TradePlanEngine] = None
+
         # Rules cache for cross-service access
         self.rules_cache: Optional[RulesCache] = None
 
@@ -86,6 +91,25 @@ class DecisionEngineService:
                 logger.info(f"Symbol-specific rules configured for: {list(symbol_overrides.keys())}")
                 for symbol, rule_names in symbol_overrides.items():
                     logger.info(f"  {symbol}: {', '.join(rule_names)}")
+
+            # Initialize trade plan engine (reads symbol exit strategies from config)
+            symbol_exit_strategies = {
+                sym: data.get("exit_strategy", {})
+                for sym, data in self._config.get("symbol_overrides", {}).items()
+            }
+            tpe_enabled = self._config.get("trade_plan_engine", {}).get("enabled", True)
+            if tpe_enabled:
+                self.trade_plan_engine = TradePlanEngine.from_config(
+                    config=self._config,
+                    symbol_exit_strategies=symbol_exit_strategies,
+                    redis_host=self.settings.redis_host,
+                    redis_port=self.settings.redis_port,
+                    redis_password=self.settings.redis_password,
+                    redis_db=self.settings.redis_db,
+                )
+                logger.info("Trade plan engine initialized")
+            else:
+                logger.info("Trade plan engine disabled by configuration")
 
             # Initialize Kafka consumer
             self.consumer = IndicatorConsumer(
@@ -209,6 +233,25 @@ class DecisionEngineService:
                 # Record in state
                 self.state_manager.record_signal(symbol, aggregated_signal)
 
+                # Generate trade plan for BUY signals before publishing
+                trade_plan: Optional[TradePlan] = None
+                if (
+                    self.trade_plan_engine is not None
+                    and aggregated_signal.signal_type == SignalType.BUY
+                ):
+                    try:
+                        trade_plan = self.trade_plan_engine.generate(
+                            aggregated_signal, indicators
+                        )
+                        if trade_plan.rr_warning:
+                            logger.warning(
+                                f"Trade plan R:R warning for {symbol}: {trade_plan.rr_warning}"
+                            )
+                    except Exception as exc:
+                        logger.warning(
+                            f"Trade plan generation failed for {symbol}: {exc}"
+                        )
+
                 # Publish if above threshold and not debounced
                 if self._should_publish(symbol, aggregated_signal):
                     # Check risk for BUY signals
@@ -233,7 +276,10 @@ class DecisionEngineService:
 
                     if should_publish:
                         self.producer.publish_decision(
-                            aggregated_signal, indicators, risk_result=risk_result
+                            aggregated_signal,
+                            indicators,
+                            risk_result=risk_result,
+                            trade_plan=trade_plan,
                         )
                         self._last_publish[symbol] = datetime.utcnow()
 
