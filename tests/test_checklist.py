@@ -374,14 +374,18 @@ class TestNoPlanPath(unittest.TestCase):
 
 class TestRedisUnavailable(unittest.TestCase):
 
-    def test_no_client_earnings_defaults_to_safe(self):
-        """If Redis is unavailable, earnings check defaults to no_earnings_imminent=True."""
+    def test_no_client_earnings_defaults_to_conservative(self):
+        """If Redis is completely unavailable, earnings check defaults to False (conservative).
+
+        MOH lesson: if we can't verify earnings, assume they're imminent.
+        Status becomes REVIEW so the trader must verify manually.
+        """
         evaluator = ChecklistEvaluator(
             redis_host="bad-host", redis_port=6379, redis_db=0
         )
         # _client intentionally None (connect never called)
         result = evaluator.evaluate(_make_plan(risk_pct=1.5, rr_ratio=2.5), "BULL", "WPM")
-        self.assertTrue(result.no_earnings_imminent)
+        self.assertFalse(result.no_earnings_imminent)
 
     def test_redis_error_during_get_defaults_to_safe(self):
         """RedisError during GET must default to no_earnings_imminent=True."""

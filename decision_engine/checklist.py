@@ -198,14 +198,16 @@ class ChecklistEvaluator:
         # 4. Earnings imminence (read from Redis — always runs)
         earnings = self._get_earnings(symbol)
         if earnings is None and self._client is None:
-            # Redis is DOWN — no earnings data available. Default to safe
-            # (True) so a Redis outage doesn't silently block all trades.
-            # The trader sees the REVIEW status and can verify manually.
+            # Redis is DOWN — we can't verify earnings. MOH lesson:
+            # assume NOT safe (conservative). Status becomes REVIEW so
+            # the trader sees the failed check and can verify manually.
+            # A Redis outage must never silently let a trade through
+            # earnings unprotected.
             logger.warning(
                 f"Earnings check unavailable for {symbol} (Redis down) — "
-                f"defaulting no_earnings_imminent=True"
+                f"marking no_earnings_imminent=False (conservative)"
             )
-            result.no_earnings_imminent = True
+            result.no_earnings_imminent = False
         elif earnings is None:
             # Redis is up but no earnings key → no known upcoming earnings → safe
             result.no_earnings_imminent = True
