@@ -84,7 +84,7 @@ BASE_INDICATORS = {
     "ATR_14": 1.20,
     "SMA_20": 44.50,
     "SMA_50": 43.00,
-    "BB_UPPER": 50.00,
+    "BB_UPPER": 52.00,  # must stay above target_1 (45.67 + 2.40*2 = 50.47) to avoid resistance cap
 }
 
 DEFAULT_BALANCE = 888.80
