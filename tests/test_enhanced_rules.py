@@ -136,6 +136,7 @@ class TestMomentumReversalRule:
             MACD_HISTOGRAM=0.2,     # > 0.05 → strong
             SMA_20=105.0,
             SMA_50=100.0,           # Uptrend
+            SMA_200=90.0,           # Golden cross (SMA_50 > SMA_200)
             volume=1200,
             volume_sma_20=1000,
         )
@@ -209,6 +210,26 @@ class TestMomentumReversalRule:
         # RSI 38 is outside custom zone
         result2 = r.evaluate(ctx(**self._base_indicators(RSI_14=38.0)))
         assert result2.triggered is False
+
+    def test_death_cross_rejected(self):
+        """MR should not fire when SMA_50 <= SMA_200 (death cross)."""
+        r = MomentumReversalRule()
+        result = r.evaluate(ctx(**self._base_indicators(SMA_50=85.0, SMA_200=90.0)))
+        assert result.triggered is False
+        assert "golden cross" in result.reasoning.lower() or "death cross" in result.reasoning.lower()
+
+    def test_golden_cross_required(self):
+        """MR should fire when SMA_50 > SMA_200 (golden cross context)."""
+        r = MomentumReversalRule()
+        result = r.evaluate(ctx(**self._base_indicators(SMA_50=100.0, SMA_200=90.0)))
+        assert result.triggered is True
+
+    def test_low_volume_floor_rejected(self):
+        """MR should not fire when volume < 50% of average."""
+        r = MomentumReversalRule()
+        result = r.evaluate(ctx(**self._base_indicators(volume=400, volume_sma_20=1000)))
+        assert result.triggered is False
+        assert "volume too low" in result.reasoning.lower()
 
 
 # ---------------------------------------------------------------------------

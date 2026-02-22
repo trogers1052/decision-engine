@@ -213,7 +213,7 @@ class MomentumReversalRule(Rule):
 
     @property
     def required_indicators(self) -> list:
-        return ["RSI_14", "MACD", "MACD_SIGNAL", "MACD_HISTOGRAM", "SMA_20", "SMA_50", "volume"]
+        return ["RSI_14", "MACD", "MACD_SIGNAL", "MACD_HISTOGRAM", "SMA_20", "SMA_50", "SMA_200", "volume"]
 
     def evaluate(self, context: SymbolContext) -> RuleResult:
         rsi = context.get_indicator("RSI_14")
@@ -222,9 +222,32 @@ class MomentumReversalRule(Rule):
         histogram = context.get_indicator("MACD_HISTOGRAM")
         sma20 = context.get_indicator("SMA_20")
         sma50 = context.get_indicator("SMA_50")
+        sma200 = context.get_indicator("SMA_200")
         volume = context.get_indicator("volume")
         avg_volume = context.get_indicator("volume_sma_20", volume)
         volume_ratio = volume / avg_volume if avg_volume > 0 else 1.0
+
+        # Require golden cross context (SMA_50 > SMA_200)
+        # Without this, MR fires in death cross territory producing worthless trades
+        if sma200 is not None and sma50 <= sma200:
+            return RuleResult(
+                triggered=False,
+                reasoning=(
+                    f"No golden cross: SMA_50 ({sma50:.2f}) <= SMA_200 ({sma200:.2f}). "
+                    f"Momentum reversals in death cross territory are low quality."
+                )
+            )
+
+        # Require minimum volume (50% of average) as hard floor
+        # Low-volume MR signals are noise, not real reversals
+        if volume_ratio < 0.5:
+            return RuleResult(
+                triggered=False,
+                reasoning=(
+                    f"Volume too low: {volume_ratio:.0%} of average (need >= 50%). "
+                    f"Low-volume reversals are unreliable."
+                )
+            )
 
         # Check trend
         uptrend = sma20 > sma50
@@ -303,6 +326,7 @@ class MomentumReversalRule(Rule):
                 "MACD_SIGNAL": round(signal, 4),
                 "MACD_HISTOGRAM": round(histogram, 4),
                 "uptrend": uptrend,
+                "golden_cross": sma50 > sma200 if sma200 is not None else None,
                 "volume_ratio": round(volume_ratio, 2),
             }
         )
