@@ -136,12 +136,15 @@ class FullTrendAlignmentRule(Rule):
 
     @property
     def required_indicators(self) -> list:
-        return ["SMA_20", "SMA_50", "SMA_200"]
+        return ["SMA_20", "SMA_50", "SMA_200", "close", "volume"]
 
     def evaluate(self, context: SymbolContext) -> RuleResult:
         sma20 = context.get_indicator("SMA_20")
         sma50 = context.get_indicator("SMA_50")
         sma200 = context.get_indicator("SMA_200")
+        close = context.get_indicator("close")
+        volume = context.get_indicator("volume")
+        avg_volume = context.get_indicator("volume_sma_20", volume)
 
         if not (sma20 > sma50 > sma200):
             # Not fully aligned
@@ -163,6 +166,16 @@ class FullTrendAlignmentRule(Rule):
         # More spread = stronger trend = higher confidence
         confidence = min(0.6 + total_spread / 30, 0.95)
 
+        # Volume confirmation — penalize low volume entries
+        volume_ratio = volume / avg_volume if avg_volume > 0 else 1.0
+        if volume_ratio < 0.8:
+            confidence = max(confidence - 0.10, 0.50)
+
+        # Price extension guard — penalize buying far above SMA_20
+        price_extension_pct = (close - sma20) / sma20 * 100 if sma20 > 0 else 0
+        if price_extension_pct > 15:
+            confidence = max(confidence - 0.15, 0.45)
+
         return RuleResult(
             triggered=True,
             signal=SignalType.BUY,
@@ -174,6 +187,8 @@ class FullTrendAlignmentRule(Rule):
                 "SMA_200": sma200,
                 "spread_20_50": round(spread_20_50, 2),
                 "spread_50_200": round(spread_50_200, 2),
+                "volume_ratio": round(volume_ratio, 2),
+                "price_extension_pct": round(price_extension_pct, 1),
             }
         )
 

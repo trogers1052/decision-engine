@@ -198,7 +198,7 @@ class MomentumReversalRule(Rule):
     def __init__(
         self,
         rsi_recovery_min: float = 30.0,
-        rsi_recovery_max: float = 45.0,
+        rsi_recovery_max: float = 40.0,
     ):
         self.rsi_recovery_min = rsi_recovery_min
         self.rsi_recovery_max = rsi_recovery_max
@@ -213,7 +213,7 @@ class MomentumReversalRule(Rule):
 
     @property
     def required_indicators(self) -> list:
-        return ["RSI_14", "MACD", "MACD_SIGNAL", "MACD_HISTOGRAM", "SMA_20", "SMA_50"]
+        return ["RSI_14", "MACD", "MACD_SIGNAL", "MACD_HISTOGRAM", "SMA_20", "SMA_50", "volume"]
 
     def evaluate(self, context: SymbolContext) -> RuleResult:
         rsi = context.get_indicator("RSI_14")
@@ -222,6 +222,9 @@ class MomentumReversalRule(Rule):
         histogram = context.get_indicator("MACD_HISTOGRAM")
         sma20 = context.get_indicator("SMA_20")
         sma50 = context.get_indicator("SMA_50")
+        volume = context.get_indicator("volume")
+        avg_volume = context.get_indicator("volume_sma_20", volume)
+        volume_ratio = volume / avg_volume if avg_volume > 0 else 1.0
 
         # Check trend
         uptrend = sma20 > sma50
@@ -232,8 +235,8 @@ class MomentumReversalRule(Rule):
         # MACD bullish (above signal line)
         macd_bullish = macd > signal
 
-        # MACD histogram positive and growing
-        histogram_positive = histogram > 0
+        # MACD histogram must show meaningful momentum
+        histogram_strong = histogram > 0.05
 
         if not rsi_recovering:
             if rsi < self.rsi_recovery_min:
@@ -249,6 +252,16 @@ class MomentumReversalRule(Rule):
             return RuleResult(
                 triggered=False,
                 reasoning=f"RSI recovering ({rsi:.1f}) but MACD still bearish. Wait for crossover."
+            )
+
+        # Require either strong histogram or volume confirmation
+        if not histogram_strong and volume_ratio < 1.0:
+            return RuleResult(
+                triggered=False,
+                reasoning=(
+                    f"Weak reversal: histogram {histogram:.4f} < 0.05 "
+                    f"and volume {volume_ratio:.0%} of avg. Need stronger confirmation."
+                )
             )
 
         # Both conditions met - calculate confidence
@@ -270,6 +283,10 @@ class MomentumReversalRule(Rule):
         elif rsi < 40:
             base_confidence += 0.05
 
+        # Boost for volume confirmation
+        if volume_ratio >= 1.2:
+            base_confidence += 0.05
+
         confidence = min(base_confidence, 0.90)
 
         return RuleResult(
@@ -278,7 +295,7 @@ class MomentumReversalRule(Rule):
             confidence=confidence,
             reasoning=(
                 f"REVERSAL: RSI recovering ({rsi:.1f}) with bullish MACD crossover. "
-                f"Histogram: {histogram:.3f}. Uptrend: {uptrend}"
+                f"Histogram: {histogram:.3f}. Volume: {volume_ratio:.0%} avg. Uptrend: {uptrend}"
             ),
             contributing_factors={
                 "RSI_14": round(rsi, 1),
@@ -286,6 +303,7 @@ class MomentumReversalRule(Rule):
                 "MACD_SIGNAL": round(signal, 4),
                 "MACD_HISTOGRAM": round(histogram, 4),
                 "uptrend": uptrend,
+                "volume_ratio": round(volume_ratio, 2),
             }
         )
 
@@ -319,7 +337,7 @@ class TrendContinuationRule(Rule):
 
     @property
     def required_indicators(self) -> list:
-        return ["RSI_14", "SMA_20", "SMA_50", "SMA_200", "close"]
+        return ["RSI_14", "SMA_20", "SMA_50", "SMA_200", "close", "volume"]
 
     def evaluate(self, context: SymbolContext) -> RuleResult:
         rsi = context.get_indicator("RSI_14")
@@ -327,6 +345,9 @@ class TrendContinuationRule(Rule):
         sma50 = context.get_indicator("SMA_50")
         sma200 = context.get_indicator("SMA_200")
         close = context.get_indicator("close")
+        volume = context.get_indicator("volume")
+        avg_volume = context.get_indicator("volume_sma_20", volume)
+        volume_ratio = volume / avg_volume if avg_volume > 0 else 1.0
 
         # Must have full trend alignment
         if not (sma20 > sma50 > sma200):
@@ -381,6 +402,12 @@ class TrendContinuationRule(Rule):
         if abs(distance_from_sma20) < 0.5:
             base_confidence += 0.05
 
+        # Volume confirmation
+        if volume_ratio >= 1.0:
+            base_confidence += 0.05
+        elif volume_ratio < 0.8:
+            base_confidence -= 0.05
+
         confidence = min(base_confidence, 0.85)
 
         return RuleResult(
@@ -389,7 +416,7 @@ class TrendContinuationRule(Rule):
             confidence=confidence,
             reasoning=(
                 f"CONTINUATION: Price at SMA_20 support ({distance_from_sma20:+.1f}%). "
-                f"Full alignment. RSI: {rsi:.1f}"
+                f"Full alignment. RSI: {rsi:.1f}. Volume: {volume_ratio:.0%} avg."
             ),
             contributing_factors={
                 "RSI_14": round(rsi, 1),
@@ -398,5 +425,6 @@ class TrendContinuationRule(Rule):
                 "distance_from_sma20_pct": round(distance_from_sma20, 2),
                 "trend_spread_20_50": round(trend_spread_20_50, 2),
                 "trend_spread_50_200": round(trend_spread_50_200, 2),
+                "volume_ratio": round(volume_ratio, 2),
             }
         )
