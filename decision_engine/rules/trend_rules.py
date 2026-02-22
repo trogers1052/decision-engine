@@ -166,15 +166,25 @@ class FullTrendAlignmentRule(Rule):
         # More spread = stronger trend = higher confidence
         confidence = min(0.6 + total_spread / 30, 0.95)
 
+        # Price extension guard — reject entries too far above SMA_20
+        price_extension_pct = (close - sma20) / sma20 * 100 if sma20 > 0 else 0
+        if price_extension_pct > 8:
+            return RuleResult(
+                triggered=False,
+                reasoning=(
+                    f"Price ${close:.2f} is {price_extension_pct:.1f}% above SMA_20 ${sma20:.2f} — "
+                    f"too extended for safe entry (max 8%)"
+                )
+            )
+
         # Volume confirmation — penalize low volume entries
         volume_ratio = volume / avg_volume if avg_volume > 0 else 1.0
         if volume_ratio < 0.8:
             confidence = max(confidence - 0.10, 0.50)
 
-        # Price extension guard — penalize buying far above SMA_20
-        price_extension_pct = (close - sma20) / sma20 * 100 if sma20 > 0 else 0
-        if price_extension_pct > 15:
-            confidence = max(confidence - 0.15, 0.45)
+        # Moderate extension penalty (5-8%)
+        if price_extension_pct > 5:
+            confidence = max(confidence - 0.10, 0.50)
 
         return RuleResult(
             triggered=True,
