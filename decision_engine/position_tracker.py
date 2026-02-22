@@ -70,8 +70,8 @@ class PositionTracker:
                 enable_auto_commit=True,
                 value_deserializer=lambda m: m,  # Keep as bytes, decode in handler
                 consumer_timeout_ms=1000,  # 1 second poll timeout
-                request_timeout_ms=30000,
                 session_timeout_ms=30000,
+                request_timeout_ms=40000,  # must be > session_timeout_ms
             )
             logger.info(f"PositionTracker connected, subscribed to {self.topic}")
             return True
@@ -110,6 +110,10 @@ class PositionTracker:
     def _consume_loop(self):
         """Main consume loop."""
         while self._running:
+            if not self.consumer:
+                logger.error("PositionTracker consumer is None, stopping loop")
+                self._running = False
+                break
             try:
                 # Poll for messages (with timeout from consumer_timeout_ms)
                 for message in self.consumer:
