@@ -236,7 +236,8 @@ output:
 symbol_overrides:
 
   # =========================================================================
-  # TIER 1 - BEST PERFORMERS (Sharpe > 1.0)
+  # TIER 1 - BEST PERFORMERS (Sharpe > 0.75)
+  # Backtested 2021-01-01 to 2026-02-22, daily signals + 5min exits
   # =========================================================================
 
   CCJ:
@@ -253,40 +254,42 @@ symbol_overrides:
     min_confidence: 0.65
 
   CAT:
-    description: "Caterpillar - Industrial (65.3% WR, +159%, 1.14 Sharpe)"
+    description: "Caterpillar - Industrial (56.5% WR, +151%, 1.54 Sharpe, 2.88 PF)"
     rules:
       - enhanced_buy_dip
       - momentum_reversal
       - trend_continuation
       - rsi_oversold
-      - rsi_overbought
       - macd_bearish_crossover
       - trend_alignment
       - trend_break_warning
+      - death_cross
+      - seasonality
     exit_strategy:
-      profit_target: 0.10
-      stop_loss: 0.05
+      profit_target: 0.12
+      stop_loss: 0.04
+      max_loss_pct: 4.0
+      cooldown_bars: 3
     min_confidence: 0.5
 
   WPM:
-    description: "Wheaton Precious Metals (56.4% WR, +203.4%, 1.04 Sharpe)"
+    description: "Wheaton Precious Metals (48.6% WR, +201.2%, 0.67 Sharpe, 2.47 PF)"
     rules:
       - enhanced_buy_dip
       - momentum_reversal
       - trend_continuation
       - rsi_oversold
-      - rsi_overbought
       - macd_bearish_crossover
       - trend_alignment
+      - golden_cross
       - trend_break_warning
-      - commodity_breakout
-      - miner_metal_ratio
-      - dollar_weakness
+      - death_cross
       - seasonality
-      - volume_breakout
     exit_strategy:
       profit_target: 0.12
-      stop_loss: 0.06
+      stop_loss: 0.04
+      max_loss_pct: 4.0
+      cooldown_bars: 3
     min_confidence: 0.5
 
   PPLT:
@@ -307,38 +310,44 @@ symbol_overrides:
     min_confidence: 0.65
 
   # =========================================================================
-  # TIER 2 - GOOD PERFORMERS (Sharpe 0.5-1.0)
+  # TIER 2 - GOOD PERFORMERS (Sharpe 0.5-0.75)
   # =========================================================================
 
   IAUM:
-    description: "iShares Gold Micro (58.1% WR, +80%, 0.69 Sharpe, LOWEST DD -13.6%)"
+    description: "iShares Gold Micro (64.7% WR, +96.3%, 0.76 Sharpe, 3.96 PF, -11.8% DD)"
     rules:
       - enhanced_buy_dip
       - momentum_reversal
       - trend_continuation
       - rsi_oversold
-      - rsi_overbought
       - macd_bearish_crossover
       - trend_alignment
+      - golden_cross
       - trend_break_warning
+      - death_cross
+      - seasonality
     exit_strategy:
-      profit_target: 0.10
-      stop_loss: 0.05
+      profit_target: 0.05
+      stop_loss: 0.04
+      max_loss_pct: 4.0
+      cooldown_bars: 3
     min_confidence: 0.5
 
   URNM:
-    description: "Uranium Mining ETF (57.1% WR, +173.6%, 0.68 Sharpe)"
+    description: "Uranium Mining ETF (44% WR, +103.7%, 0.72 Sharpe, 2.98 PF, -12.5% DD)"
     rules:
-      - enhanced_buy_dip
-      - momentum_reversal
       - trend_continuation
+      - seasonality
+      - death_cross
     exit_strategy:
-      profit_target: 0.10
-      stop_loss: 0.05
-    min_confidence: 0.5
+      profit_target: 0.12
+      stop_loss: 0.04
+      max_loss_pct: 4.0
+      cooldown_bars: 7
+    min_confidence: 0.65
 
   SLV:
-    description: "Silver ETF (55.2% WR, +265.8%, 0.60 Sharpe)"
+    description: "Silver ETF (56.9% WR, +139.5%, 0.60 Sharpe, 3.05 PF, -17.9% DD)"
     rules:
       - enhanced_buy_dip
       - momentum_reversal
@@ -353,9 +362,12 @@ symbol_overrides:
       - dollar_weakness
       - seasonality
       - volume_breakout
+      - death_cross
     exit_strategy:
       profit_target: 0.12
-      stop_loss: 0.06
+      stop_loss: 0.04
+      max_loss_pct: 4.0
+      cooldown_bars: 7
     min_confidence: 0.5
 
   # =========================================================================
@@ -363,25 +375,35 @@ symbol_overrides:
   # =========================================================================
 
   MP:
-    description: "MP Materials - Rare Earth (50% WR, +164%, 0.61 Sharpe, CAUTION: -39% DD)"
+    description: "MP Materials - Rare Earth (63.9% WR, +299.9%, 0.47 Sharpe, 3.21 PF, -26.3% DD)"
     rules:
-      - enhanced_buy_dip
-      - momentum_reversal
       - trend_continuation
+      - seasonality
+      - death_cross
     exit_strategy:
-      profit_target: 0.10
+      profit_target: 0.12
       stop_loss: 0.05
+      max_loss_pct: 5.0
+      cooldown_bars: 5
     min_confidence: 0.5
 
   UUUU:
-    description: "Energy Fuels - Uranium (55.2% WR, +269.9%, 0.53 Sharpe, CAUTION: -32% DD)"
+    description: "Energy Fuels - Uranium (48.6% WR, +119.5%, 0.50 Sharpe, 1.89 PF, -33.9% DD)"
     rules:
       - enhanced_buy_dip
       - momentum_reversal
       - trend_continuation
+      - rsi_oversold
+      - macd_bearish_crossover
+      - trend_alignment
+      - trend_break_warning
+      - death_cross
+      - seasonality
     exit_strategy:
-      profit_target: 0.10
-      stop_loss: 0.05
+      profit_target: 0.20
+      stop_loss: 0.04
+      max_loss_pct: 4.0
+      cooldown_bars: 3
     min_confidence: 0.5
 
 # -----------------------------------------------------------------------------
