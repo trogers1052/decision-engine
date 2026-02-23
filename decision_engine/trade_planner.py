@@ -211,19 +211,17 @@ class TradePlanEngine:
         target_1 = entry_price + (risk_per_share * 2.0)
         target_2 = entry_price + (risk_per_share * 3.0)
 
-        # Calculate effective R:R considering nearby resistance.
-        # BB_UPPER can cap realistic upside before the mechanical 2:1 target.
-        # Targets stay at 2:1/3:1 as aspirational levels — the R:R tells
-        # the trader what they realistically get before hitting resistance.
+        # R:R is calculated from the mechanical 2:1 target vs risk.
+        # BB_UPPER resistance is noted for the trader but does NOT reduce
+        # the official R:R — Bollinger Bands are dynamic and price
+        # routinely trades through them.
         resistance_note: Optional[str] = None
-        effective_target = target_1
         if bb_upper is not None and bb_upper > entry_price and bb_upper < target_1:
-            effective_target = bb_upper
             resistance_note = (
-                f"BB_UPPER ${bb_upper:.2f} may limit upside before "
-                f"2:1 target ${target_1:.2f}"
+                f"BB_UPPER ${bb_upper:.2f} is nearby resistance — "
+                f"watch for stall before 2:1 target ${target_1:.2f}"
             )
-        rr_ratio = (effective_target - entry_price) / risk_per_share
+        rr_ratio = (target_1 - entry_price) / risk_per_share
 
         # Symbol-specific % target from rules.yaml exit_strategy
         symbol_target_pct: Optional[float] = (
