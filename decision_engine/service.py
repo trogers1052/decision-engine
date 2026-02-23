@@ -351,6 +351,21 @@ class DecisionEngineService:
                     )
                     return
 
+                # Suppress BUY signals with R:R below minimum threshold.
+                # This prevents low-quality signals from reaching Kafka/alerts.
+                if (
+                    trade_plan is not None
+                    and aggregated_signal.signal_type == SignalType.BUY
+                    and not trade_plan.plan_valid
+                ):
+                    min_rr = self._config.get("trade_plan_engine", {}).get("min_rr_ratio", 2.0)
+                    logger.warning(
+                        f"R:R gate: suppressing BUY for {symbol} — "
+                        f"R:R {trade_plan.risk_reward_ratio:.1f}:1 below "
+                        f"minimum {min_rr:.1f}:1"
+                    )
+                    return
+
                 # Publish if above threshold and not debounced
                 if self._should_publish(symbol, aggregated_signal):
                     # Check risk for BUY signals
