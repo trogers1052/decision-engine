@@ -271,6 +271,11 @@ class DecisionEngineService:
                 logger.debug(f"Skipping {symbol}: data not ready")
                 return
 
+            # Skip symbols not in symbol_overrides when whitelist mode is active
+            if self._config.get("evaluate_only_overrides", False):
+                if symbol not in self._config.get("symbol_overrides", {}):
+                    return
+
             # Parse timestamp
             time_str = data.get("time", datetime.utcnow().isoformat())
             try:

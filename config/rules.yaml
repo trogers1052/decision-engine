@@ -22,6 +22,11 @@ service:
   name: decision-engine
   version: "2.0.0"
 
+# Only evaluate symbols listed in symbol_overrides.
+# Context/indicator symbols (SPY, QQQ, sector ETFs) flow through stock.indicators
+# but should NOT be evaluated for trading signals — context-service handles them.
+evaluate_only_overrides: true
+
 # -----------------------------------------------------------------------------
 # ENHANCED RULES (Backtested - Primary Strategy)
 # -----------------------------------------------------------------------------
