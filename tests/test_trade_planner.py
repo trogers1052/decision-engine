@@ -496,5 +496,177 @@ class TestTradePlanModel(unittest.TestCase):
         self.assertIsInstance(d["setup_type"], str)
 
 
+class TestTargetProbability(unittest.TestCase):
+    """Step 5b — probability estimation uses indicator state."""
+
+    def test_probability_populated_for_both_targets(self):
+        engine = _engine()
+        signal = _make_aggregated("CCJ", ["Enhanced Buy Dip"])
+        plan = engine.generate(signal, BASE_INDICATORS)
+        self.assertIsNotNone(plan.target_1_probability)
+        self.assertIsNotNone(plan.target_2_probability)
+
+    def test_t1_probability_higher_than_t2(self):
+        engine = _engine()
+        signal = _make_aggregated("CCJ", ["Enhanced Buy Dip"])
+        plan = engine.generate(signal, BASE_INDICATORS)
+        self.assertGreater(plan.target_1_probability, plan.target_2_probability)
+
+    def test_probability_bounded_15_to_80(self):
+        engine = _engine()
+        signal = _make_aggregated("CCJ", ["Enhanced Buy Dip"])
+        plan = engine.generate(signal, BASE_INDICATORS)
+        self.assertGreaterEqual(plan.target_1_probability, 0.15)
+        self.assertLessEqual(plan.target_1_probability, 0.80)
+        self.assertGreaterEqual(plan.target_2_probability, 0.15)
+        self.assertLessEqual(plan.target_2_probability, 0.80)
+
+    def test_oversold_boosts_probability(self):
+        """RSI < 30 should increase probability vs neutral RSI."""
+        engine = _engine()
+        signal = _make_aggregated("CCJ", ["Enhanced Buy Dip"])
+
+        neutral = dict(BASE_INDICATORS, RSI_14=50.0)
+        oversold = dict(BASE_INDICATORS, RSI_14=25.0)
+
+        plan_neutral = engine.generate(signal, neutral)
+        plan_oversold = engine.generate(signal, oversold)
+        self.assertGreater(
+            plan_oversold.target_1_probability,
+            plan_neutral.target_1_probability,
+        )
+
+    def test_overbought_reduces_probability(self):
+        """RSI > 70 should decrease probability vs neutral RSI."""
+        engine = _engine()
+        signal = _make_aggregated("CCJ", ["Enhanced Buy Dip"])
+
+        neutral = dict(BASE_INDICATORS, RSI_14=50.0)
+        overbought = dict(BASE_INDICATORS, RSI_14=78.0)
+
+        plan_neutral = engine.generate(signal, neutral)
+        plan_overbought = engine.generate(signal, overbought)
+        self.assertLess(
+            plan_overbought.target_1_probability,
+            plan_neutral.target_1_probability,
+        )
+
+    def test_target_above_bb_upper_reduces_probability(self):
+        """Target above BB_UPPER should lower probability."""
+        engine = _engine()
+        signal = _make_aggregated("CCJ", ["Enhanced Buy Dip"])
+
+        # BB_UPPER well above targets — no penalty
+        high_bb = dict(BASE_INDICATORS, BB_UPPER=80.0)
+        # BB_UPPER below target_1 — penalty
+        low_bb = dict(BASE_INDICATORS, BB_UPPER=46.0)
+
+        plan_high = engine.generate(signal, high_bb)
+        plan_low = engine.generate(signal, low_bb)
+        self.assertGreater(
+            plan_high.target_1_probability,
+            plan_low.target_1_probability,
+        )
+
+
+class TestTargetTimeframe(unittest.TestCase):
+    """Step 5b — estimated days to reach targets."""
+
+    def test_est_days_populated(self):
+        engine = _engine()
+        signal = _make_aggregated("CCJ", ["Enhanced Buy Dip"])
+        plan = engine.generate(signal, BASE_INDICATORS)
+        self.assertIsNotNone(plan.target_1_est_days)
+        self.assertIsNotNone(plan.target_2_est_days)
+
+    def test_t2_takes_longer_than_t1(self):
+        engine = _engine()
+        signal = _make_aggregated("CCJ", ["Enhanced Buy Dip"])
+        plan = engine.generate(signal, BASE_INDICATORS)
+        self.assertGreaterEqual(plan.target_2_est_days, plan.target_1_est_days)
+
+    def test_est_days_bounded_1_to_60(self):
+        engine = _engine()
+        signal = _make_aggregated("CCJ", ["Enhanced Buy Dip"])
+        plan = engine.generate(signal, BASE_INDICATORS)
+        self.assertGreaterEqual(plan.target_1_est_days, 1)
+        self.assertLessEqual(plan.target_1_est_days, 60)
+        self.assertGreaterEqual(plan.target_2_est_days, 1)
+        self.assertLessEqual(plan.target_2_est_days, 60)
+
+    def test_strong_trend_faster(self):
+        """ADX > 30 should reduce estimated days."""
+        engine = _engine()
+        signal = _make_aggregated("CCJ", ["Enhanced Buy Dip"])
+
+        weak = dict(BASE_INDICATORS, ADX_14=10.0)
+        strong = dict(BASE_INDICATORS, ADX_14=35.0)
+
+        plan_weak = engine.generate(signal, weak)
+        plan_strong = engine.generate(signal, strong)
+        self.assertLessEqual(plan_strong.target_1_est_days, plan_weak.target_1_est_days)
+
+
+class TestPriceContext(unittest.TestCase):
+    """Step 5b — price context generation."""
+
+    def test_context_populated(self):
+        engine = _engine()
+        signal = _make_aggregated("CCJ", ["Enhanced Buy Dip"])
+        plan = engine.generate(signal, BASE_INDICATORS)
+        self.assertIsNotNone(plan.price_context)
+        self.assertIsInstance(plan.price_context, str)
+        self.assertGreater(len(plan.price_context), 0)
+
+    def test_overbought_rsi_mentioned(self):
+        """RSI > 75 should appear in price context."""
+        engine = _engine()
+        signal = _make_aggregated("CCJ", ["Enhanced Buy Dip"])
+        indicators = dict(BASE_INDICATORS, RSI_14=78.0)
+        plan = engine.generate(signal, indicators)
+        self.assertIn("overbought", plan.price_context.lower())
+
+    def test_sma_alignment_mentioned(self):
+        """Full bullish SMA alignment should appear in context."""
+        engine = _engine()
+        signal = _make_aggregated("CCJ", ["Enhanced Buy Dip"])
+        indicators = dict(
+            BASE_INDICATORS,
+            SMA_20=44.50,
+            SMA_50=43.00,
+            SMA_200=40.00,
+        )
+        plan = engine.generate(signal, indicators)
+        self.assertIn("alignment", plan.price_context.lower())
+
+    def test_extended_above_sma20_mentioned(self):
+        """Price 6% above SMA_20 should warn about extension."""
+        engine = _engine()
+        signal = _make_aggregated("CCJ", ["Enhanced Buy Dip"])
+        indicators = dict(BASE_INDICATORS, SMA_20=42.00)  # 45.67 / 42.00 = 8.7% above
+        plan = engine.generate(signal, indicators)
+        self.assertIn("above SMA20", plan.price_context)
+
+    def test_below_sma200_mentioned(self):
+        """Price below SMA_200 should note long-term downtrend."""
+        engine = _engine()
+        signal = _make_aggregated("CCJ", ["Enhanced Buy Dip"])
+        indicators = dict(BASE_INDICATORS, SMA_200=50.00)  # close 45.67 < 50
+        plan = engine.generate(signal, indicators)
+        self.assertIn("SMA200", plan.price_context)
+
+    def test_context_serializes_to_json(self):
+        """Ensure new fields appear in serialized output."""
+        engine = _engine()
+        signal = _make_aggregated("CCJ", ["Enhanced Buy Dip"])
+        plan = engine.generate(signal, BASE_INDICATORS)
+        d = plan.model_dump()
+        self.assertIn("target_1_probability", d)
+        self.assertIn("target_1_est_days", d)
+        self.assertIn("target_2_probability", d)
+        self.assertIn("target_2_est_days", d)
+        self.assertIn("price_context", d)
+
+
 if __name__ == "__main__":
     unittest.main()

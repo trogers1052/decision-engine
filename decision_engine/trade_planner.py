@@ -229,6 +229,19 @@ class TradePlanEngine:
         )
 
         # ----------------------------------------------------------------
+        # Step 5b: Target probability, timeframe, and price context
+        # ----------------------------------------------------------------
+        t1_prob = self._estimate_probability(
+            entry_price, target_1, raw_stop, indicators
+        )
+        t2_prob = self._estimate_probability(
+            entry_price, target_2, raw_stop, indicators
+        )
+        t1_days = self._estimate_days(entry_price, target_1, atr, indicators)
+        t2_days = self._estimate_days(entry_price, target_2, atr, indicators)
+        price_context = self._build_price_context(close, indicators)
+
+        # ----------------------------------------------------------------
         # Step 6: Position sizing
         # ----------------------------------------------------------------
         account_balance = self._get_account_balance()
@@ -262,6 +275,11 @@ class TradePlanEngine:
             target_2=round(target_2, 2),
             symbol_target_pct=symbol_target_pct,
             resistance_note=resistance_note,
+            target_1_probability=round(t1_prob, 2),
+            target_1_est_days=t1_days,
+            target_2_probability=round(t2_prob, 2),
+            target_2_est_days=t2_days,
+            price_context=price_context,
             risk_reward_ratio=round(rr_ratio, 2),
             shares=shares,
             dollar_risk=round(dollar_risk, 2),
@@ -382,6 +400,208 @@ class TradePlanEngine:
             return close - (atr * 0.5)
         else:  # SIGNAL
             return raw_stop * 0.99
+
+    # ------------------------------------------------------------------
+    # Step 5b: Target probability, timeframe, and price context
+    # ------------------------------------------------------------------
+
+    def _estimate_probability(
+        self,
+        entry: float,
+        target: float,
+        stop: float,
+        indicators: dict,
+    ) -> float:
+        """
+        Heuristic probability estimate for reaching a target price.
+
+        Uses indicator-based adjustments around base probabilities derived
+        from the R:R ratio.  Higher R:R targets are harder to reach.
+        """
+        risk = entry - stop
+        reward = target - entry
+        rr = reward / risk if risk > 0 else 0.0
+
+        # Base probability inversely related to R:R (empirical swing-trade heuristics)
+        if rr <= 1.5:
+            base = 0.55
+        elif rr <= 2.0:
+            base = 0.45
+        elif rr <= 2.5:
+            base = 0.38
+        elif rr <= 3.0:
+            base = 0.30
+        else:
+            base = 0.22
+
+        adj = 0.0
+
+        # --- RSI: oversold = bullish, overbought = bearish ---
+        rsi = indicators.get("RSI_14")
+        if rsi is not None:
+            rsi = float(rsi)
+            if rsi < 30:
+                adj += 0.12
+            elif rsi < 40:
+                adj += 0.08
+            elif rsi > 80:
+                adj -= 0.12
+            elif rsi > 70:
+                adj -= 0.08
+
+        # --- MACD momentum direction ---
+        macd = indicators.get("MACD")
+        macd_sig = indicators.get("MACD_SIGNAL")
+        if macd is not None and macd_sig is not None:
+            if float(macd) > float(macd_sig):
+                adj += 0.05  # bullish momentum
+            else:
+                adj -= 0.05  # bearish momentum
+
+        # --- ADX trend strength ---
+        adx = indicators.get("ADX_14")
+        if adx is not None:
+            adx = float(adx)
+            if adx > 30:
+                adj += 0.08  # strong trend
+            elif adx > 20:
+                adj += 0.03  # moderate trend
+            elif adx < 15:
+                adj -= 0.05  # no trend, choppy
+
+        # --- Bollinger Band position: target above BB_UPPER = harder ---
+        bb_upper = indicators.get("BB_UPPER")
+        bb_lower = indicators.get("BB_LOWER")
+        close = float(indicators.get("close", entry))
+        if bb_upper is not None and target > float(bb_upper):
+            adj -= 0.08  # target above upper band
+        if bb_lower is not None and close <= float(bb_lower) * 1.02:
+            adj += 0.05  # price near lower band, room to expand
+
+        # --- SMA alignment: full uptrend favors targets ---
+        sma_20 = indicators.get("SMA_20")
+        sma_50 = indicators.get("SMA_50")
+        sma_200 = indicators.get("SMA_200")
+        if sma_20 is not None and sma_50 is not None and sma_200 is not None:
+            s20, s50, s200 = float(sma_20), float(sma_50), float(sma_200)
+            if close > s20 > s50 > s200:
+                adj += 0.05  # full alignment
+            elif close < s20 and close < s50:
+                adj -= 0.05  # below key averages
+
+        # --- Extension penalty: far above SMA_20 = harder ---
+        if sma_20 is not None:
+            pct_above_sma20 = (close - float(sma_20)) / float(sma_20) * 100
+            if pct_above_sma20 > 5.0:
+                adj -= 0.08  # extended
+            elif pct_above_sma20 > 3.0:
+                adj -= 0.04  # moderately extended
+
+        # --- Volume confirmation ---
+        vol = indicators.get("volume")
+        vol_avg = indicators.get("volume_sma_20")
+        if vol is not None and vol_avg is not None and float(vol_avg) > 0:
+            if float(vol) > float(vol_avg) * 1.5:
+                adj += 0.05  # strong volume
+            elif float(vol) < float(vol_avg) * 0.5:
+                adj -= 0.03  # low volume, weak conviction
+
+        return max(0.15, min(0.80, base + adj))
+
+    def _estimate_days(
+        self,
+        entry: float,
+        target: float,
+        atr: float,
+        indicators: dict,
+    ) -> int:
+        """
+        Rough estimate of trading days to reach target based on ATR.
+
+        Assumes price advances ~0.5 ATR per day in the desired direction
+        on average, adjusted for trend strength (ADX).
+        """
+        distance = target - entry
+        if distance <= 0 or atr <= 0:
+            return 1
+
+        # Daily progress factor: fraction of ATR the stock moves favorably
+        factor = 0.5  # base: half ATR per day
+
+        adx = indicators.get("ADX_14")
+        if adx is not None:
+            adx = float(adx)
+            if adx > 30:
+                factor = 0.7  # trending strongly, faster
+            elif adx > 20:
+                factor = 0.55
+            elif adx < 15:
+                factor = 0.3  # choppy, slow
+
+        est = distance / (atr * factor)
+        return max(1, min(60, round(est)))  # cap 1–60 days
+
+    def _build_price_context(self, close: float, indicators: dict) -> str:
+        """
+        Generate a short human-readable context about where price sits
+        relative to key technical levels.
+        """
+        notes: list[str] = []
+
+        # BB position — where is price within the Bollinger range?
+        bb_upper = indicators.get("BB_UPPER")
+        bb_lower = indicators.get("BB_LOWER")
+        if bb_upper is not None and bb_lower is not None:
+            bb_u, bb_l = float(bb_upper), float(bb_lower)
+            bb_range = bb_u - bb_l
+            if bb_range > 0:
+                bb_pos = (close - bb_l) / bb_range
+                if bb_pos > 0.90:
+                    notes.append("At upper Bollinger Band — extended")
+                elif bb_pos > 0.75:
+                    notes.append("Upper half of BB range")
+                elif bb_pos < 0.10:
+                    notes.append("At lower Bollinger Band — oversold")
+                elif bb_pos < 0.25:
+                    notes.append("Lower half of BB range")
+
+        # SMA relationship
+        sma_20 = indicators.get("SMA_20")
+        sma_50 = indicators.get("SMA_50")
+        sma_200 = indicators.get("SMA_200")
+
+        if sma_20 is not None:
+            pct_from_sma20 = (close - float(sma_20)) / float(sma_20) * 100
+            if pct_from_sma20 > 5.0:
+                notes.append(f"{pct_from_sma20:.1f}% above SMA20 — stretched")
+            elif abs(pct_from_sma20) <= 1.0:
+                notes.append("At SMA20 support")
+
+        if sma_200 is not None:
+            if close < float(sma_200):
+                notes.append("Below SMA200 — long-term downtrend")
+
+        # Trend alignment
+        if sma_20 is not None and sma_50 is not None and sma_200 is not None:
+            s20, s50, s200 = float(sma_20), float(sma_50), float(sma_200)
+            if close > s20 > s50 > s200:
+                notes.append("Full trend alignment (bullish)")
+            elif close < s20 < s50:
+                notes.append("Below key averages")
+
+        # RSI context
+        rsi = indicators.get("RSI_14")
+        if rsi is not None:
+            rsi = float(rsi)
+            if rsi > 75:
+                notes.append(f"RSI {rsi:.0f} — overbought, reversal risk")
+            elif rsi < 30:
+                notes.append(f"RSI {rsi:.0f} — deeply oversold")
+
+        if not notes:
+            notes.append("Mid-range, no extremes")
+
+        return ". ".join(notes)
 
     # ------------------------------------------------------------------
     # Step 6: Position sizing

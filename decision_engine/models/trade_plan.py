@@ -37,6 +37,13 @@ class TradePlan(BaseModel):
     symbol_target_pct: Optional[float]          # Symbol-specific % target from rules.yaml
     resistance_note: Optional[str]              # e.g. "BB_UPPER $48.90 may resist"
 
+    # Target context — probability, timeframe, and price positioning
+    target_1_probability: Optional[float] = None  # 0.0–1.0 estimated hit probability
+    target_1_est_days: Optional[int] = None       # estimated trading days to reach target 1
+    target_2_probability: Optional[float] = None  # 0.0–1.0 estimated hit probability
+    target_2_est_days: Optional[int] = None       # estimated trading days to reach target 2
+    price_context: Optional[str] = None           # e.g. "Near 20-day high — upside limited"
+
     # Risk metrics
     risk_reward_ratio: float                    # (target_1 - entry) / (entry - stop)
     shares: int
