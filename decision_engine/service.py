@@ -102,16 +102,16 @@ class DecisionEngineService:
                 logger.warning("No rules loaded! Check your configuration.")
 
             # Log symbol overrides
-            symbol_overrides = RuleRegistry.get_symbol_overrides(self._config)
-            if symbol_overrides:
-                logger.info(f"Symbol-specific rules configured for: {list(symbol_overrides.keys())}")
-                for symbol, rule_names in symbol_overrides.items():
+            active_tickers = RuleRegistry.get_active_tickers(self._config)
+            if active_tickers:
+                logger.info(f"Symbol-specific rules configured for: {list(active_tickers.keys())}")
+                for symbol, rule_names in active_tickers.items():
                     logger.info(f"  {symbol}: {', '.join(rule_names)}")
 
             # Initialize trade plan engine (reads symbol exit strategies from config)
             symbol_exit_strategies = {
                 sym: data.get("exit_strategy", {})
-                for sym, data in self._config.get("symbol_overrides", {}).items()
+                for sym, data in self._config.get("active_tickers", {}).items()
             }
             tpe_enabled = self._config.get("trade_plan_engine", {}).get("enabled", True)
             if tpe_enabled:
@@ -274,9 +274,9 @@ class DecisionEngineService:
                 logger.debug(f"Skipping {symbol}: data not ready")
                 return
 
-            # Skip symbols not in symbol_overrides when whitelist mode is active
-            if self._config.get("evaluate_only_overrides", False):
-                if symbol not in self._config.get("symbol_overrides", {}):
+            # Skip symbols not in active_tickers
+            if self._config.get("active_tickers_only", False):
+                if symbol not in self._config.get("active_tickers", {}):
                     return
 
             # Parse timestamp
@@ -759,12 +759,12 @@ class DecisionEngineService:
         logger.info(f"Position tracking: enabled (listening to trading.orders)")
 
         # Log symbol-specific configurations
-        symbol_overrides = RuleRegistry.get_symbol_overrides(self._config)
-        if symbol_overrides:
+        active_tickers = RuleRegistry.get_active_tickers(self._config)
+        if active_tickers:
             logger.info("-" * 40)
             logger.info("Symbol-Specific Rule Configurations:")
-            for symbol, rule_names in symbol_overrides.items():
-                exit_strat = self._config.get("symbol_overrides", {}).get(symbol, {}).get("exit_strategy", {})
+            for symbol, rule_names in active_tickers.items():
+                exit_strat = self._config.get("active_tickers", {}).get(symbol, {}).get("exit_strategy", {})
                 pt = exit_strat.get("profit_target", 0.07) * 100
                 sl = exit_strat.get("stop_loss", 0.05) * 100
                 logger.info(f"  {symbol}: {len(rule_names)} rules, PT={pt:.0f}%, SL={sl:.0f}%")

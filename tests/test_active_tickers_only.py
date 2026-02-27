@@ -1,8 +1,8 @@
 """
-Tests for evaluate_only_overrides config flag.
+Tests for active_tickers_only config flag.
 
 When enabled, the decision engine should only evaluate symbols listed in
-symbol_overrides and silently skip context/indicator symbols like SPY, QQQ.
+active_tickers and silently skip context/indicator symbols like SPY, QQQ.
 """
 
 import unittest
@@ -24,15 +24,15 @@ def _make_event(symbol: str) -> dict:
     }
 
 
-class TestEvaluateOnlyOverrides(unittest.TestCase):
-    """Verify the evaluate_only_overrides whitelist gate."""
+class TestActiveTickersOnly(unittest.TestCase):
+    """Verify the active_tickers_only whitelist gate."""
 
-    def _build_service(self, evaluate_only: bool, overrides: dict) -> DecisionEngineService:
+    def _build_service(self, active_only: bool, tickers: dict) -> DecisionEngineService:
         settings = MagicMock(spec=Settings)
         svc = DecisionEngineService(settings)
         svc._config = {
-            "evaluate_only_overrides": evaluate_only,
-            "symbol_overrides": overrides,
+            "active_tickers_only": active_only,
+            "active_tickers": tickers,
         }
         # Stub out downstream so we can detect whether evaluation proceeds
         svc.state_manager = MagicMock()
@@ -40,10 +40,10 @@ class TestEvaluateOnlyOverrides(unittest.TestCase):
         return svc
 
     def test_context_symbol_skipped_when_flag_enabled(self):
-        """SPY is not in symbol_overrides — should be skipped entirely."""
+        """SPY is not in active_tickers — should be skipped entirely."""
         svc = self._build_service(
-            evaluate_only=True,
-            overrides={"CCJ": {"rules": ["trend_continuation"]}},
+            active_only=True,
+            tickers={"CCJ": {"rules": ["trend_continuation"]}},
         )
         svc.handle_indicator_event(_make_event("SPY"))
 
@@ -51,10 +51,10 @@ class TestEvaluateOnlyOverrides(unittest.TestCase):
         svc._evaluate_rules.assert_not_called()
 
     def test_trade_symbol_evaluated_when_flag_enabled(self):
-        """CCJ is in symbol_overrides — should be evaluated normally."""
+        """CCJ is in active_tickers — should be evaluated normally."""
         svc = self._build_service(
-            evaluate_only=True,
-            overrides={"CCJ": {"rules": ["trend_continuation"]}},
+            active_only=True,
+            tickers={"CCJ": {"rules": ["trend_continuation"]}},
         )
         svc.handle_indicator_event(_make_event("CCJ"))
 
@@ -62,10 +62,10 @@ class TestEvaluateOnlyOverrides(unittest.TestCase):
         svc._evaluate_rules.assert_called_once()
 
     def test_all_symbols_evaluated_when_flag_disabled(self):
-        """With flag off, even non-override symbols get evaluated."""
+        """With flag off, even non-active symbols get evaluated."""
         svc = self._build_service(
-            evaluate_only=False,
-            overrides={"CCJ": {"rules": ["trend_continuation"]}},
+            active_only=False,
+            tickers={"CCJ": {"rules": ["trend_continuation"]}},
         )
         svc.handle_indicator_event(_make_event("SPY"))
 
@@ -73,7 +73,7 @@ class TestEvaluateOnlyOverrides(unittest.TestCase):
         svc._evaluate_rules.assert_called_once()
 
     def test_flag_defaults_to_false(self):
-        """When evaluate_only_overrides is absent from config, all symbols pass."""
+        """When active_tickers_only is absent from config, all symbols pass."""
         settings = MagicMock(spec=Settings)
         svc = DecisionEngineService(settings)
         svc._config = {}  # No flag set

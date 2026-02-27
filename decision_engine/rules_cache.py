@@ -97,14 +97,14 @@ class RulesCache:
             })
             self._redis.set(EXIT_STRATEGY_KEY, json.dumps(exit_strategy))
 
-            # Store symbol-specific overrides for quick lookup
-            symbol_overrides = config.get("symbol_overrides", {})
-            for symbol, override in symbol_overrides.items():
+            # Store ticker-specific configs for quick lookup
+            active_tickers = config.get("active_tickers", {})
+            for symbol, override in active_tickers.items():
                 key = f"{SYMBOL_RULES_PREFIX}{symbol}"
                 self._redis.set(key, json.dumps(override))
 
             logger.info(
-                f"Published rules config with {len(symbol_overrides)} symbol overrides"
+                f"Published rules config with {len(active_tickers)} active tickers"
             )
             return True
 

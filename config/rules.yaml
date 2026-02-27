@@ -22,10 +22,10 @@ service:
   name: decision-engine
   version: "2.0.0"
 
-# Only evaluate symbols listed in symbol_overrides.
+# Only evaluate symbols listed in active_tickers — the tradeable universe.
 # Context/indicator symbols (SPY, QQQ, sector ETFs) flow through stock.indicators
 # but should NOT be evaluated for trading signals — context-service handles them.
-evaluate_only_overrides: true
+active_tickers_only: true
 
 # -----------------------------------------------------------------------------
 # ENHANCED RULES (Backtested - Primary Strategy)
@@ -233,12 +233,12 @@ output:
   min_publish_confidence: 0.5
 
 # -----------------------------------------------------------------------------
-# Symbol-Specific Rule Overrides (Backtested 2021-01-01 to 2026-01-25)
+# Active Tickers (Backtested 2021-01-01 to 2026-01-25)
 # -----------------------------------------------------------------------------
 # ONLY trade these symbols - they have proven backtested results.
 # Removed: ETN (45.8% WR), HL (-47% DD), PAAS (0.17 Sharpe), FCX (0.18 Sharpe)
 # -----------------------------------------------------------------------------
-symbol_overrides:
+active_tickers:
 
   # =========================================================================
   # TIER 1 - BEST PERFORMERS (Sharpe > 0.75)

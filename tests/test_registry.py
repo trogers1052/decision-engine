@@ -213,7 +213,7 @@ class TestLoadSymbolRules:
     def test_with_override(self):
         config = {
             "rules": {"rsi_oversold": {"threshold": 30}},
-            "symbol_overrides": {
+            "active_tickers": {
                 "AAPL": {
                     "rules": ["rsi_oversold"],
                     "exit_strategy": {"profit_target": 0.10, "stop_loss": 0.04},
@@ -228,30 +228,30 @@ class TestLoadSymbolRules:
     def test_default_exit_strategy(self):
         config = {
             "rules": {},
-            "symbol_overrides": {"AAPL": {"rules": []}},
+            "active_tickers": {"AAPL": {"rules": []}},
         }
         _, _, exit_strategy = RuleRegistry.load_symbol_rules(config, "AAPL")
         assert exit_strategy == {"profit_target": 0.07, "stop_loss": 0.05}
 
 
 # ---------------------------------------------------------------------------
-# get_symbol_overrides
+# get_active_tickers
 # ---------------------------------------------------------------------------
 
-class TestGetSymbolOverrides:
+class TestGetActiveTickers:
     def test_returns_mapping(self):
         config = {
-            "symbol_overrides": {
+            "active_tickers": {
                 "AAPL": {"rules": ["rsi_oversold", "macd_momentum"]},
                 "GOOG": {"rules": ["trend_alignment"]},
             }
         }
-        result = RuleRegistry.get_symbol_overrides(config)
+        result = RuleRegistry.get_active_tickers(config)
         assert result["AAPL"] == ["rsi_oversold", "macd_momentum"]
         assert result["GOOG"] == ["trend_alignment"]
 
     def test_empty_config(self):
-        result = RuleRegistry.get_symbol_overrides({})
+        result = RuleRegistry.get_active_tickers({})
         assert result == {}
 
 

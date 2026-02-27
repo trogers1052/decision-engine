@@ -300,13 +300,13 @@ class RuleRegistry:
         Returns:
             Tuple of (list of rules, dict of rule weights, exit strategy dict)
         """
-        symbol_overrides = config.get("symbol_overrides", {})
+        active_tickers = config.get("active_tickers", {})
         global_rules_config = config.get("rules", {})
         default_exit = config.get("exit_strategy", {"profit_target": 0.07, "stop_loss": 0.05})
 
-        # Check if this symbol has overrides
-        if symbol in symbol_overrides:
-            override = symbol_overrides[symbol]
+        # Check if this symbol has ticker-specific config
+        if symbol in active_tickers:
+            override = active_tickers[symbol]
             rule_names = override.get("rules", [])
             exit_strategy = override.get("exit_strategy", default_exit)
 
@@ -323,22 +323,22 @@ class RuleRegistry:
                     weights[rule.name] = rule_config.get("weight", 1.0)
                     logger.debug(f"Loaded override rule for {symbol}: {rule.name}")
 
-            logger.info(f"Symbol {symbol}: using {len(rules)} override rules")
+            logger.info(f"Symbol {symbol}: using {len(rules)} rules")
             return rules, weights, exit_strategy
 
-        # No overrides - return None to signal use of default rules
+        # Not in active_tickers - return None to signal use of default rules
         return None, None, default_exit
 
     @staticmethod
-    def get_symbol_overrides(config: dict) -> Dict[str, List[str]]:
+    def get_active_tickers(config: dict) -> Dict[str, List[str]]:
         """
-        Get all symbol overrides from config.
+        Get all active tickers from config.
 
         Returns:
             Dict mapping symbol -> list of rule names
         """
-        symbol_overrides = config.get("symbol_overrides", {})
+        active_tickers = config.get("active_tickers", {})
         return {
             symbol: override.get("rules", [])
-            for symbol, override in symbol_overrides.items()
+            for symbol, override in active_tickers.items()
         }
