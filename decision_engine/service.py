@@ -211,7 +211,10 @@ class DecisionEngineService:
                     risk_config_path = getattr(
                         self.settings, 'risk_config_path', None
                     )
-                    self.risk_adapter = RiskAdapter(config_path=risk_config_path)
+                    self.risk_adapter = RiskAdapter(
+                        config_path=risk_config_path,
+                        kafka_brokers=self.settings.kafka_broker_list,
+                    )
                     if self.risk_adapter.initialize():
                         logger.info("Risk engine initialized successfully")
                     else:
