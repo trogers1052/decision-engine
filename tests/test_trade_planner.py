@@ -272,8 +272,8 @@ class TestATRTooTight(unittest.TestCase):
     """When ATR is very small → stop is widened to 4%."""
 
     def setUp(self):
-        indicators = dict(BASE_INDICATORS)
-        indicators["ATR_14"] = 0.20  # Very small — stop would be ~0.4% = <3%
+        # Strip SMA/BB_LOWER to avoid support snapping interference
+        indicators = {"close": 45.67, "ATR_14": 0.20, "BB_UPPER": 52.00}
         self.engine = _engine()
         self.signal = _make_aggregated("CCJ", ["Enhanced Buy Dip"])
         self.plan = self.engine.generate(self.signal, indicators)
@@ -296,8 +296,8 @@ class TestATRFloorIsConfigDriven(unittest.TestCase):
 
     def test_custom_stop_min_pct_changes_floor(self):
         # stop_min_pct=5.0 → floor should be 6%
-        indicators = dict(BASE_INDICATORS)
-        indicators["ATR_14"] = 0.10  # tiny ATR, stop would be ~0.4%
+        # Strip SMA/BB_LOWER to avoid support snapping interference
+        indicators = {"close": 45.67, "ATR_14": 0.10, "BB_UPPER": 52.00}
         engine = _engine(stop_min_pct=5.0)
         signal = _make_aggregated("CCJ", ["Enhanced Buy Dip"])
         plan = engine.generate(signal, indicators)

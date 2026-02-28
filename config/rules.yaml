@@ -256,6 +256,8 @@ active_tickers:
       stop_loss: 0.06
       max_loss_pct: 6.0
       cooldown_bars: 7
+      win_rate: 0.633
+      trades_per_year: 8
     min_confidence: 0.65
 
   CAT:
@@ -275,6 +277,8 @@ active_tickers:
       stop_loss: 0.04
       max_loss_pct: 4.0
       cooldown_bars: 3
+      win_rate: 0.565
+      trades_per_year: 10
     min_confidence: 0.5
 
   WPM:
@@ -295,6 +299,8 @@ active_tickers:
       stop_loss: 0.04
       max_loss_pct: 4.0
       cooldown_bars: 3
+      win_rate: 0.486
+      trades_per_year: 11
     min_confidence: 0.5
 
   PPLT:
@@ -312,6 +318,8 @@ active_tickers:
       stop_loss: 0.04
       max_loss_pct: 4.0
       cooldown_bars: 3
+      win_rate: 0.594
+      trades_per_year: 11
     min_confidence: 0.65
 
   # =========================================================================
@@ -336,6 +344,8 @@ active_tickers:
       stop_loss: 0.04
       max_loss_pct: 4.0
       cooldown_bars: 3
+      win_rate: 0.647
+      trades_per_year: 6
     min_confidence: 0.5
 
   URNM:
@@ -349,6 +359,8 @@ active_tickers:
       stop_loss: 0.04
       max_loss_pct: 4.0
       cooldown_bars: 7
+      win_rate: 0.440
+      trades_per_year: 6
     min_confidence: 0.65
 
   SLV:
@@ -373,6 +385,8 @@ active_tickers:
       stop_loss: 0.04
       max_loss_pct: 4.0
       cooldown_bars: 7
+      win_rate: 0.569
+      trades_per_year: 13
     min_confidence: 0.5
 
   # =========================================================================
@@ -390,6 +404,8 @@ active_tickers:
       stop_loss: 0.05
       max_loss_pct: 5.0
       cooldown_bars: 5
+      win_rate: 0.639
+      trades_per_year: 22
     min_confidence: 0.5
 
   UUUU:
@@ -409,6 +425,8 @@ active_tickers:
       stop_loss: 0.04
       max_loss_pct: 4.0
       cooldown_bars: 3
+      win_rate: 0.486
+      trades_per_year: 6
     min_confidence: 0.5
 
 # -----------------------------------------------------------------------------

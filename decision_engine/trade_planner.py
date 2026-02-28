@@ -187,10 +187,10 @@ class TradePlanEngine:
         )
 
         # ----------------------------------------------------------------
-        # Step 3: Stop loss (ATR-based + guards)
+        # Step 3: Stop loss (per-stock % + support snapping)
         # ----------------------------------------------------------------
-        raw_stop, stop_method, stop_pct_val = self._calculate_stop(
-            entry_price, atr, warnings
+        raw_stop, stop_method, stop_pct_val, support_level_used = (
+            self._calculate_stop(symbol, entry_price, atr, indicators, warnings)
         )
 
         # ----------------------------------------------------------------
@@ -201,32 +201,36 @@ class TradePlanEngine:
         )
 
         # ----------------------------------------------------------------
-        # Step 5: Targets
+        # Step 5: Targets (per-stock profit target from rules.yaml)
         # ----------------------------------------------------------------
         risk_per_share = entry_price - raw_stop
         if risk_per_share <= 0:
             raise ValueError(
                 f"Stop price {raw_stop:.4f} >= entry price {entry_price:.4f} for {symbol}"
             )
-        target_1 = entry_price + (risk_per_share * 2.0)
-        target_2 = entry_price + (risk_per_share * 3.0)
 
-        # R:R is calculated from the mechanical 2:1 target vs risk.
-        # BB_UPPER resistance is noted for the trader but does NOT reduce
-        # the official R:R — Bollinger Bands are dynamic and price
-        # routinely trades through them.
+        symbol_target_pct: Optional[float] = (
+            self.symbol_exit_strategies.get(symbol, {}).get("profit_target")
+        )
+
+        if symbol_target_pct is not None:
+            # Per-stock targets from backtested exit strategy
+            target_1 = entry_price * (1 + symbol_target_pct)
+            target_2 = entry_price * (1 + symbol_target_pct * 1.5)
+        else:
+            # Fallback: mechanical 2:1 / 3:1 for unknown symbols
+            target_1 = entry_price + (risk_per_share * 2.0)
+            target_2 = entry_price + (risk_per_share * 3.0)
+
+        rr_ratio = (target_1 - entry_price) / risk_per_share
+
+        # BB_UPPER resistance is noted but does NOT affect targets or R:R
         resistance_note: Optional[str] = None
         if bb_upper is not None and bb_upper > entry_price and bb_upper < target_1:
             resistance_note = (
                 f"BB_UPPER ${bb_upper:.2f} is nearby resistance — "
-                f"watch for stall before 2:1 target ${target_1:.2f}"
+                f"watch for stall before target ${target_1:.2f}"
             )
-        rr_ratio = (target_1 - entry_price) / risk_per_share
-
-        # Symbol-specific % target from rules.yaml exit_strategy
-        symbol_target_pct: Optional[float] = (
-            self.symbol_exit_strategies.get(symbol, {}).get("profit_target")
-        )
 
         # ----------------------------------------------------------------
         # Step 5b: Target probability, timeframe, and price context
@@ -251,9 +255,19 @@ class TradePlanEngine:
         warnings.extend(sizing_warnings)
 
         # ----------------------------------------------------------------
+        # Step 6b: Goal projection
+        # ----------------------------------------------------------------
+        goal_years, expected_annual_return = self._calculate_goal_projection(
+            symbol, account_balance
+        )
+
+        # ----------------------------------------------------------------
         # Step 7: Validate and flag
         # ----------------------------------------------------------------
-        plan_valid = rr_ratio >= self.min_rr_ratio
+        # Configured stocks always pass — their PT/SL ratio IS the
+        # backtested edge.  Unknown symbols still require min R:R.
+        has_config = symbol in self.symbol_exit_strategies
+        plan_valid = has_config or rr_ratio >= self.min_rr_ratio
         rr_warning: Optional[str] = None
         if not plan_valid:
             rr_warning = (
@@ -271,6 +285,7 @@ class TradePlanEngine:
             stop_price=round(raw_stop, 2),
             stop_method=stop_method,
             stop_pct=round(stop_pct_val, 2),
+            support_level_used=support_level_used,
             target_1=round(target_1, 2),
             target_2=round(target_2, 2),
             symbol_target_pct=symbol_target_pct,
@@ -285,6 +300,8 @@ class TradePlanEngine:
             dollar_risk=round(dollar_risk, 2),
             risk_pct=round(risk_pct, 2),
             position_value=round(position_value, 2),
+            goal_years=goal_years,
+            expected_annual_return=expected_annual_return,
             invalidation_price=round(invalidation, 2),
             plan_valid=plan_valid,
             rr_warning=rr_warning,
@@ -353,32 +370,132 @@ class TradePlanEngine:
     # Step 3: Stop loss
     # ------------------------------------------------------------------
 
+    # Proximity threshold for support snapping (% of entry price)
+    _SNAP_PROXIMITY_PCT = 1.5
+    # Buffer below support level (0.5% below)
+    _SUPPORT_BUFFER = 0.005
+
     def _calculate_stop(
         self,
+        symbol: str,
         entry_price: float,
         atr: float,
+        indicators: dict,
         warnings: list[str],
-    ) -> tuple[float, str, float]:
-        """Return (stop_price, stop_method, stop_pct)."""
-        raw_stop = entry_price - (atr * self.atr_multiplier)
-        stop_pct = (entry_price - raw_stop) / entry_price * 100
+    ) -> tuple[float, str, float, Optional[str]]:
+        """Return (stop_price, stop_method, stop_pct, support_level_used)."""
 
-        if stop_pct < self.stop_min_pct:
-            # Widen to 1 pct point above the configured minimum to create a safe floor
-            floor_pct = self.stop_min_pct + 1.0
-            raw_stop = entry_price * (1 - floor_pct / 100)
-            stop_method = f"percentage_{floor_pct:.0f}pct"
-            stop_pct = floor_pct
-            warnings.append(f"ATR-based stop was <{self.stop_min_pct:.0f}% — widened to {floor_pct:.0f}%")
-        elif stop_pct > self.stop_max_pct:
-            raw_stop = entry_price * 0.90
-            stop_method = "percentage_10pct"
-            stop_pct = 10.0
-            warnings.append("ATR-based stop was >15% — capped at 10%")
+        # 1. Per-stock percentage stop from rules.yaml exit_strategy
+        symbol_stop_pct = self.symbol_exit_strategies.get(symbol, {}).get("stop_loss")
+
+        if symbol_stop_pct is not None:
+            raw_stop = entry_price * (1 - symbol_stop_pct)
+            stop_pct = symbol_stop_pct * 100
+            stop_method = f"config_{stop_pct:.0f}pct"
         else:
-            stop_method = "atr_2x"
+            # Fallback: ATR-based (existing behavior for unknown symbols)
+            raw_stop = entry_price - (atr * self.atr_multiplier)
+            stop_pct = (entry_price - raw_stop) / entry_price * 100
 
-        return raw_stop, stop_method, stop_pct
+            if stop_pct < self.stop_min_pct:
+                floor_pct = self.stop_min_pct + 1.0
+                raw_stop = entry_price * (1 - floor_pct / 100)
+                stop_method = f"percentage_{floor_pct:.0f}pct"
+                stop_pct = floor_pct
+                warnings.append(
+                    f"ATR-based stop was <{self.stop_min_pct:.0f}% — widened to {floor_pct:.0f}%"
+                )
+            elif stop_pct > self.stop_max_pct:
+                raw_stop = entry_price * 0.90
+                stop_method = "percentage_10pct"
+                stop_pct = 10.0
+                warnings.append("ATR-based stop was >15% — capped at 10%")
+            else:
+                stop_method = "atr_2x"
+
+        # 2. Support snapping: if a support level is close to the stop and
+        #    slightly above it, place the stop just below that support instead.
+        support_level_used: Optional[str] = None
+
+        support_levels: dict[str, float] = {}
+        for key in ("SMA_20", "SMA_50", "SMA_200", "BB_LOWER"):
+            val = indicators.get(key)
+            if val is not None:
+                fval = float(val)
+                if 0 < fval < entry_price:
+                    support_levels[key] = fval
+
+        if support_levels:
+            best_name: Optional[str] = None
+            best_price: Optional[float] = None
+
+            for name, price in support_levels.items():
+                dist_pct = abs(price - raw_stop) / entry_price * 100
+                if dist_pct <= self._SNAP_PROXIMITY_PCT and price > raw_stop:
+                    if best_price is None or price < best_price:
+                        best_name = name
+                        best_price = price
+
+            if best_name is not None and best_price is not None:
+                snapped_stop = best_price * (1 - self._SUPPORT_BUFFER)
+                stop_pct = (entry_price - snapped_stop) / entry_price * 100
+                support_level_used = f"{best_name} ${best_price:.2f}"
+                raw_stop = snapped_stop
+                stop_method = f"support_{best_name.lower()}"
+                warnings.append(
+                    f"Stop snapped below {best_name} "
+                    f"(${best_price:.2f}) → ${snapped_stop:.2f}"
+                )
+
+        return raw_stop, stop_method, stop_pct, support_level_used
+
+    # ------------------------------------------------------------------
+    # Goal projection
+    # ------------------------------------------------------------------
+
+    def _calculate_goal_projection(
+        self,
+        symbol: str,
+        account_balance: float,
+        monthly_contribution: float = 50.0,
+        goal_amount: float = 1_000_000.0,
+        max_years: int = 50,
+    ) -> tuple[Optional[float], Optional[float]]:
+        """
+        Calculate years to reach goal based on this stock's backtested performance.
+
+        Returns (goal_years, expected_annual_return_pct) or (None, None) if
+        the required fields (win_rate, profit_target, stop_loss, trades_per_year)
+        are not configured for this symbol.
+        """
+        exit_strat = self.symbol_exit_strategies.get(symbol, {})
+        win_rate = exit_strat.get("win_rate")
+        profit_target = exit_strat.get("profit_target")
+        stop_loss = exit_strat.get("stop_loss")
+        trades_per_year = exit_strat.get("trades_per_year")
+
+        if any(v is None for v in [win_rate, profit_target, stop_loss, trades_per_year]):
+            return None, None
+
+        # Expected return per trade
+        e_per_trade = win_rate * profit_target - (1 - win_rate) * stop_loss
+        if e_per_trade <= 0:
+            return None, None  # negative expectancy — never reaches goal
+
+        # Annual return via geometric compounding of per-trade returns
+        annual_return = (1 + e_per_trade) ** trades_per_year - 1
+        if annual_return <= 0:
+            return None, None
+
+        # Compound year-by-year with monthly contributions
+        balance = account_balance
+        annual_contribution = monthly_contribution * 12
+        for year in range(1, max_years + 1):
+            balance = balance * (1 + annual_return) + annual_contribution
+            if balance >= goal_amount:
+                return float(year), round(annual_return * 100, 1)
+
+        return float(max_years), round(annual_return * 100, 1)
 
     # ------------------------------------------------------------------
     # Step 4: Invalidation

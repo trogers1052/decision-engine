@@ -28,8 +28,9 @@ class TradePlan(BaseModel):
 
     # Stop loss
     stop_price: float                           # Exact stop price
-    stop_method: str                            # "atr_2x" | "percentage_4pct" | "percentage_10pct"
+    stop_method: str                            # "atr_2x" | "config_Xpct" | "support_sma_50" etc.
     stop_pct: float                             # % distance from entry to stop
+    support_level_used: Optional[str] = None    # e.g. "SMA_50 $43.25" if stop snapped to support
 
     # Targets
     target_1: float                             # 2:1 R:R target
@@ -50,6 +51,10 @@ class TradePlan(BaseModel):
     dollar_risk: float
     risk_pct: float
     position_value: float
+
+    # Goal projection
+    goal_years: Optional[float] = None             # Years to reach $1M at this stock's perf
+    expected_annual_return: Optional[float] = None  # Expected annual return % from this stock
 
     # Invalidation
     invalidation_price: float                   # Below this = setup is dead
