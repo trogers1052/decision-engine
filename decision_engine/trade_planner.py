@@ -275,6 +275,14 @@ class TradePlanEngine:
                 f"{self.min_rr_ratio:.0f}:1 — consider skipping"
             )
 
+        # Reject if position can't be sized (stock too expensive for account)
+        if shares == 0:
+            plan_valid = False
+            rr_warning = (
+                f"Cannot size position: stock at ${entry_price:.2f} "
+                f"exceeds 2% risk budget on ${account_balance:.0f} account"
+            )
+
         return TradePlan(
             setup_type=setup_type,
             rules_contributed=rules_contributed,
@@ -762,11 +770,13 @@ class TradePlanEngine:
             return 0, 0.0, 0.0, 0.0, warnings
         shares = int(max_dollar_risk / risk_per_share)
         if shares == 0:
-            shares = 1
+            risk_needed = risk_per_share / account_balance * 100 if account_balance > 0 else 0.0
             warnings.append(
-                f"Account too small for 2% risk sizing at ${entry_price:.2f} — "
-                f"minimum 1 share (risking ${risk_per_share:.2f})"
+                f"Stock too expensive: 1 share of ${entry_price:.2f} risks "
+                f"${risk_per_share:.2f} ({risk_needed:.1f}% of account) — "
+                f"exceeds 2% max"
             )
+            return 0, 0.0, 0.0, 0.0, warnings
         dollar_risk = shares * risk_per_share
         risk_pct = (dollar_risk / account_balance) * 100 if account_balance > 0 else 0.0
         position_value = shares * entry_price

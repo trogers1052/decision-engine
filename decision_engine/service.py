@@ -208,11 +208,11 @@ class DecisionEngineService:
             # Initialize risk engine if available and enabled
             if HAS_RISK_ENGINE and self._risk_enabled:
                 try:
-                    risk_config_path = getattr(
-                        self.settings, 'risk_config_path', None
-                    )
                     self.risk_adapter = RiskAdapter(
-                        config_path=risk_config_path,
+                        config_path=getattr(
+                            self.settings, 'risk_config_path',
+                            'config/risk_config.yaml'
+                        ),
                         kafka_brokers=self.settings.kafka_broker_list,
                     )
                     if self.risk_adapter.initialize():
@@ -224,7 +224,10 @@ class DecisionEngineService:
                     logger.warning(f"Risk engine initialization error: {e}")
                     self.risk_adapter = None
             elif not HAS_RISK_ENGINE:
-                logger.info("Risk engine not available (risk_engine package not installed)")
+                logger.warning(
+                    "RISK ENGINE NOT AVAILABLE — risk_engine package not installed. "
+                    "All BUY signals will bypass portfolio risk checks!"
+                )
             else:
                 logger.info("Risk engine disabled by configuration")
 

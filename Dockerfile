@@ -3,14 +3,17 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies (git for pip git+ installs, libpq for psycopg2)
+# Install system dependencies (libpq for psycopg2)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
     build-essential \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install dependencies
+# Install risk-engine from local source first (it's a dependency)
+COPY risk-engine/ /tmp/risk-engine/
+RUN pip install --no-cache-dir /tmp/risk-engine/ && rm -rf /tmp/risk-engine/
+
+# Install remaining dependencies (risk-engine already satisfied)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

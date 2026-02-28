@@ -21,13 +21,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Checkout risk-engine
+        uses: actions/checkout@v4
+        with:
+          repository: trogers1052/risk-engine
+          path: risk-engine
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install ./risk-engine/
+          pip install -r requirements.txt
 
       - name: Run tests
         run: pytest tests/ -v

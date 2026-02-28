@@ -185,8 +185,8 @@ rules:
 aggregation:
   method: "consensus_boost"  # Boost confidence when multiple rules agree
   min_confidence: 0.5        # Backtested threshold
-  require_consensus: true    # Require multiple rules to agree before signaling
-  consensus_min_rules: 2     # Minimum rules that must trigger for a signal
+  require_consensus: false   # Disabled — consensus_boost already rewards multi-rule agreement
+  consensus_min_rules: 1     # Single-rule signals allowed; boost differentiates quality
 
 # -----------------------------------------------------------------------------
 # Exit Strategy (For Alert Service / Trading Journal)

@@ -16,7 +16,8 @@ redis>=5.0.0
 psycopg2-binary>=2.9.0
 
 # Risk Engine (position sizing, portfolio risk)
-risk-engine @ git+https://github.com/trogers1052/risk-engine.git
+# Installed from local source in Dockerfile (COPY risk-engine/)
+# For local dev: pip install -e ../risk-engine/
 
 # Testing
 pytest>=7.0.0

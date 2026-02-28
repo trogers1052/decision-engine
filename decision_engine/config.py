@@ -81,6 +81,16 @@ class Settings(BaseSettings):
         description="Enable publishing rules to Redis for cross-service access"
     )
 
+    # Risk engine settings
+    risk_engine_enabled: bool = Field(
+        True,
+        description="Enable portfolio-level risk checks via risk-engine"
+    )
+    risk_config_path: Optional[str] = Field(
+        "config/risk_config.yaml",
+        description="Path to risk engine config YAML"
+    )
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
