@@ -337,10 +337,14 @@ class DecisionEngineService:
                     and aggregated_signal.signal_type == SignalType.BUY
                 ):
                     try:
+                        # Per-symbol allowed_regimes from config (e.g. UUUU: BULL/CHOP only)
+                        symbol_config = self._config.get("active_tickers", {}).get(symbol, {})
+                        allowed_regimes = symbol_config.get("allowed_regimes")
                         checklist_result = self.checklist_evaluator.evaluate(
                             trade_plan=trade_plan,
                             regime_id=aggregated_signal.regime_id,
                             symbol=symbol,
+                            allowed_regimes=allowed_regimes,
                         )
                     except Exception as exc:
                         logger.warning(
@@ -600,8 +604,10 @@ class DecisionEngineService:
 
     def _should_publish(self, symbol: str, signal: AggregatedSignal) -> bool:
         """Check if we should publish this signal."""
-        # Check confidence threshold
-        if signal.aggregate_confidence < self.settings.min_publish_confidence:
+        # Check confidence threshold — per-symbol override if configured
+        symbol_config = self._config.get("active_tickers", {}).get(symbol, {})
+        min_conf = symbol_config.get("min_confidence", self.settings.min_publish_confidence)
+        if signal.aggregate_confidence < min_conf:
             return False
 
         # Evict stale debounce entries to prevent unbounded growth on Pi

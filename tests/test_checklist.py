@@ -275,6 +275,51 @@ class TestRegimeCompatibilityCheck(unittest.TestCase):
         self.assertNotEqual(result.status, "BLOCKED")
         self.assertEqual(result.status, "REVIEW")
 
+    # Per-symbol allowed_regimes tests
+
+    def test_allowed_regimes_bull_passes(self):
+        """When allowed_regimes is set, BULL is allowed."""
+        ev = _make_evaluator()
+        result = ev.evaluate(_make_plan(), "BULL", "UUUU", allowed_regimes=["BULL", "CHOP"])
+        self.assertTrue(result.regime_compatible)
+
+    def test_allowed_regimes_chop_passes(self):
+        """When allowed_regimes is set, CHOP is allowed."""
+        ev = _make_evaluator()
+        result = ev.evaluate(_make_plan(), "CHOP", "UUUU", allowed_regimes=["BULL", "CHOP"])
+        self.assertTrue(result.regime_compatible)
+
+    def test_allowed_regimes_bear_fails(self):
+        """When allowed_regimes is set, BEAR is not allowed."""
+        ev = _make_evaluator()
+        result = ev.evaluate(_make_plan(), "BEAR", "UUUU", allowed_regimes=["BULL", "CHOP"])
+        self.assertFalse(result.regime_compatible)
+
+    def test_allowed_regimes_volatile_fails(self):
+        """When allowed_regimes is set, VOLATILE is not allowed."""
+        ev = _make_evaluator()
+        result = ev.evaluate(_make_plan(), "VOLATILE", "UUUU", allowed_regimes=["BULL", "CHOP"])
+        self.assertFalse(result.regime_compatible)
+
+    def test_allowed_regimes_unknown_fails(self):
+        """When allowed_regimes is set, UNKNOWN is not allowed (conservative)."""
+        ev = _make_evaluator()
+        result = ev.evaluate(_make_plan(), "UNKNOWN", "UUUU", allowed_regimes=["BULL", "CHOP"])
+        self.assertFalse(result.regime_compatible)
+
+    def test_no_allowed_regimes_falls_back_to_global(self):
+        """Without allowed_regimes, VOLATILE passes (only BEAR is blocked globally)."""
+        ev = _make_evaluator()
+        result = ev.evaluate(_make_plan(), "VOLATILE", "WPM")
+        self.assertTrue(result.regime_compatible)
+
+    def test_allowed_regimes_affects_status(self):
+        """Regime incompatibility with allowed_regimes produces REVIEW status."""
+        ev = _make_evaluator()
+        result = ev.evaluate(_make_plan(), "BEAR", "UUUU", allowed_regimes=["BULL", "CHOP"])
+        self.assertEqual(result.status, "REVIEW")
+        self.assertFalse(result.all_checks_passed)
+
 
 # ---------------------------------------------------------------------------
 # Status aggregation

@@ -160,6 +160,7 @@ class ChecklistEvaluator:
         trade_plan: Optional[TradePlan],
         regime_id: str,
         symbol: str,
+        allowed_regimes: Optional[list] = None,
     ) -> ChecklistResult:
         """
         Run all five checks and return a ChecklistResult.
@@ -177,6 +178,10 @@ class ChecklistEvaluator:
             trade_plan: The generated TradePlan, or None if unavailable.
             regime_id:  Current market regime (BULL / SIDEWAYS / BEAR / UNKNOWN).
             symbol:     Ticker symbol (used to look up earnings in Redis).
+            allowed_regimes: Optional list of regimes where this symbol may
+                trade (e.g. ["BULL", "CHOP"]).  If provided, regime_compatible
+                is True only when regime_id is in this list.  If None, falls
+                back to the global BEAR_REGIMES blacklist.
         """
         result = ChecklistResult(regime_id=regime_id)
 
@@ -219,7 +224,10 @@ class ChecklistEvaluator:
             result.no_earnings_imminent = days_away > EARNINGS_HARD_GATE_DAYS
 
         # 5. Regime compatibility (always runs)
-        result.regime_compatible = regime_id not in BEAR_REGIMES
+        if allowed_regimes:
+            result.regime_compatible = regime_id in allowed_regimes
+        else:
+            result.regime_compatible = regime_id not in BEAR_REGIMES
 
         # Aggregate
         result.all_checks_passed = (

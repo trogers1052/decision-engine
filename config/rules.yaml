@@ -261,7 +261,10 @@ active_tickers:
     min_confidence: 0.65
 
   CAT:
-    description: "Caterpillar - Industrial (56.5% WR, +151%, 1.54 Sharpe, 2.88 PF)"
+    # VALIDATED 2026-03-02: 3/4 gates passed (WF+BS+MC, Regime borderline at 79% bull)
+    # Profitable in bull+bear+volatile — only chop is negative (22% WR)
+    # No restrictions needed — strong like CCJ/IAUM
+    description: "Caterpillar - Industrial (53.2% WR, +147.3%, 1.52 Sharpe, 2.73 PF, -17.6% DD)"
     rules:
       - enhanced_buy_dip
       - momentum_reversal
@@ -277,12 +280,15 @@ active_tickers:
       stop_loss: 0.04
       max_loss_pct: 4.0
       cooldown_bars: 3
-      win_rate: 0.565
-      trades_per_year: 10
+      win_rate: 0.532
+      trades_per_year: 16
     min_confidence: 0.5
 
   WPM:
-    description: "Wheaton Precious Metals (48.6% WR, +201.2%, 0.67 Sharpe, 2.47 PF)"
+    # VALIDATED 2026-03-02: 3/4 gates passed (WF+BS+MC, Regime borderline at 79% bull)
+    # WF ratio 289% — strategy improves in out-of-sample (gold rally 2024-2026)
+    # Profitable or flat in ALL regimes — no restrictions needed
+    description: "Wheaton Precious Metals - Streamer (45.9% WR, +170.7%, 0.74 Sharpe, 2.14 PF, -30.7% DD)"
     rules:
       - enhanced_buy_dip
       - momentum_reversal
@@ -299,12 +305,15 @@ active_tickers:
       stop_loss: 0.04
       max_loss_pct: 4.0
       cooldown_bars: 3
-      win_rate: 0.486
-      trades_per_year: 11
+      win_rate: 0.459
+      trades_per_year: 15
     min_confidence: 0.5
 
   PPLT:
-    description: "Platinum ETF - The Compounder (59.4% WR, +72%, 0.81 Sharpe, 2.23 PF)"
+    # VALIDATED 2026-03-01: 4/4 gates passed (WF+BS+MC+Regime)
+    # Only symbol to pass all 4 validation gates
+    # Key change: +commodity_breakout diversifies regime exposure (73%→60% bull)
+    description: "Platinum ETF - The Compounder (61.5% WR, +89.1%, 1.00 Sharpe, 2.20 PF, -14.8% DD)"
     rules:
       - enhanced_buy_dip
       - momentum_reversal
@@ -313,13 +322,14 @@ active_tickers:
       - golden_cross
       - trend_break_warning
       - death_cross
+      - commodity_breakout
     exit_strategy:
       profit_target: 0.06
       stop_loss: 0.04
       max_loss_pct: 4.0
       cooldown_bars: 3
-      win_rate: 0.594
-      trades_per_year: 11
+      win_rate: 0.615
+      trades_per_year: 13
     min_confidence: 0.65
 
   # =========================================================================
@@ -327,7 +337,10 @@ active_tickers:
   # =========================================================================
 
   IAUM:
-    description: "iShares Gold Micro (64.7% WR, +96.3%, 0.76 Sharpe, 3.96 PF, -11.8% DD)"
+    # VALIDATED 2026-03-02: 3/4 gates passed (WF+BS+MC, Regime fails at 83% bull)
+    # Strongest p-value in portfolio (0.0002), safest P95 DD (-15.3%)
+    # No config change needed — baseline is already optimal
+    description: "iShares Gold Micro (61.5% WR, +96.6%, 0.80 Sharpe, 2.80 PF, -11.8% DD)"
     rules:
       - enhanced_buy_dip
       - momentum_reversal
@@ -344,27 +357,35 @@ active_tickers:
       stop_loss: 0.04
       max_loss_pct: 4.0
       cooldown_bars: 3
-      win_rate: 0.647
-      trades_per_year: 6
+      win_rate: 0.615
+      trades_per_year: 8
     min_confidence: 0.5
 
   URNM:
-    description: "Uranium Mining ETF (44% WR, +103.7%, 0.72 Sharpe, 2.98 PF, -12.5% DD)"
+    # VALIDATED 2026-03-02: 3/4 gates passed (WF+BS+MC, Regime fails — uranium secular bull)
+    # Strongest bootstrap in portfolio: p=0.0052, Sharpe CI [0.72, 5.58]
+    # Key change: added commodity_breakout (+30% Sharpe, +41% return, less DD)
+    # Outperforms sister ticker CCJ in Sharpe (0.90 vs 0.83) and PF (2.74 vs 2.04)
+    description: "Uranium Mining ETF (43.8% WR, +123.3%, 0.90 Sharpe, 2.74 PF, -17.3% DD)"
     rules:
       - trend_continuation
       - seasonality
       - death_cross
+      - commodity_breakout
     exit_strategy:
       profit_target: 0.12
       stop_loss: 0.04
       max_loss_pct: 4.0
       cooldown_bars: 7
-      win_rate: 0.440
+      win_rate: 0.438
       trades_per_year: 6
     min_confidence: 0.65
 
   SLV:
-    description: "Silver ETF (56.9% WR, +139.5%, 0.60 Sharpe, 3.05 PF, -17.9% DD)"
+    # VALIDATED 2026-03-01: 2/4 gates passed (Bootstrap + Monte Carlo)
+    # Fails Walk-Forward (negative train Sharpe) and Regime (87% bull-dependent)
+    # Conditional deployment: BULL/CHOP regimes only, half position size
+    description: "Silver ETF (48.6% WR, +77.1%, 0.53 Sharpe, 2.08 PF, -16.8% DD)"
     rules:
       - enhanced_buy_dip
       - momentum_reversal
@@ -385,31 +406,41 @@ active_tickers:
       stop_loss: 0.04
       max_loss_pct: 4.0
       cooldown_bars: 7
-      win_rate: 0.569
-      trades_per_year: 13
-    min_confidence: 0.5
+      win_rate: 0.486
+      trades_per_year: 14
+    min_confidence: 0.55
+    allowed_regimes:            # Only trade in these regimes (validated 2026-03-01)
+      - BULL
+      - CHOP
 
   # =========================================================================
   # TIER 3 - HIGH RISK / HIGH REWARD (Use smaller position sizes)
   # =========================================================================
 
   MP:
-    description: "MP Materials - Rare Earth (63.9% WR, +299.9%, 0.47 Sharpe, 3.21 PF, -26.3% DD)"
+    # VALIDATED 2026-03-02: 3/4 gates passed (WF+MC+Regime, Bootstrap marginal at p=0.0414)
+    # Only symbol besides PPLT to pass Regime gate — profit well distributed across regimes
+    # Key change: PT 12%→15% (13x better return). Lean 3-rule set works best.
+    # Conditional: half position sizing until bootstrap edge confirmed with more trades
+    description: "MP Materials - Rare Earth (60.5% WR, +70.8%, 0.39 Sharpe, 1.76 PF, -26.1% DD)"
     rules:
       - trend_continuation
       - seasonality
       - death_cross
     exit_strategy:
-      profit_target: 0.12
+      profit_target: 0.15
       stop_loss: 0.05
       max_loss_pct: 5.0
       cooldown_bars: 5
-      win_rate: 0.639
-      trades_per_year: 22
+      win_rate: 0.605
+      trades_per_year: 8
     min_confidence: 0.5
 
   UUUU:
-    description: "Energy Fuels - Uranium (48.6% WR, +119.5%, 0.50 Sharpe, 1.89 PF, -33.9% DD)"
+    # VALIDATED 2026-03-01: 2/4 gates passed (Bootstrap + Monte Carlo)
+    # Fails Walk-Forward (negative train Sharpe) and Regime (bull-dependent)
+    # Conditional deployment: BULL/CHOP regimes only, half position size
+    description: "Energy Fuels - Uranium (49.5% WR, +134.4%, 0.40 Sharpe, 1.97 PF, -43.4% DD)"
     rules:
       - enhanced_buy_dip
       - momentum_reversal
@@ -425,15 +456,20 @@ active_tickers:
       stop_loss: 0.04
       max_loss_pct: 4.0
       cooldown_bars: 3
-      win_rate: 0.486
+      win_rate: 0.495
       trades_per_year: 6
-    min_confidence: 0.5
+    min_confidence: 0.55
+    allowed_regimes:            # Only trade in these regimes (validated 2026-03-01)
+      - BULL
+      - CHOP
 
 # -----------------------------------------------------------------------------
 # DO NOT TRADE - Removed due to poor backtested performance:
 # -----------------------------------------------------------------------------
 # ETN:  45.8% WR, below 50% = losing strategy
-# HL:   36.8% WR, -38.7% DD, -0.07 Sharpe = disaster
+# HL:   CONFIRMED BLACKLIST — validated 2026-02-28, 0-1/4 gates passed
+#       36.8% WR, -0.41 train Sharpe, p=0.22, P95 DD=-52%
+#       No statistical edge exists (5 baselines + 13 tune configs tested)
 # PAAS: 48.1% WR, +14.2%, 0.17 Sharpe, -55.9% DD = not worth it
 # FCX:  52.9% WR, +15.9%, 0.18 Sharpe, -39.5% DD = not worth it
 # -----------------------------------------------------------------------------
