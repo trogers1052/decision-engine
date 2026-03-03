@@ -417,6 +417,53 @@ active_tickers:
   # TIER 3 - HIGH RISK / HIGH REWARD (Use smaller position sizes)
   # =========================================================================
 
+  RTX:
+    # VALIDATED 2026-03-02: 3/4 gates passed (WF+BS+MC, Regime fails)
+    # Multi-TF critical — unlocks Bootstrap (p=0.0555 daily → p=0.0212 multi-TF)
+    # WF ratio 497% — strongest walk-forward in portfolio
+    # Lean 3-rule set works (like commodity miners). PF=3.29, DD=-15.9%.
+    # Half position sizing until trade count reaches 20+ (only 11 trades)
+    description: "RTX Corp - Defense (54.5% WR, +55.4%, 0.55 Sharpe, 3.29 PF, -15.9% DD)"
+    rules:
+      - trend_continuation
+      - seasonality
+      - death_cross
+    exit_strategy:
+      profit_target: 0.12
+      stop_loss: 0.05
+      max_loss_pct: 5.0
+      cooldown_bars: 5
+      win_rate: 0.545
+      trades_per_year: 2
+    min_confidence: 0.65
+
+  ITA:
+    # VALIDATED 2026-03-02: 3/4 gates passed (WF+MC+Regime, Bootstrap marginal p=0.0814)
+    # One of only 4 symbols to pass Regime — bull contributes only 39% of profit
+    # Defense is counter-cyclical: bear +11.4%, crisis +10.3%
+    # Full 10-rule set works (unlike commodity miners). Daily-only exits (multi-TF degrades).
+    # Half position sizing until bootstrap edge confirmed with more trades
+    description: "iShares US Aerospace & Defense ETF (61.5% WR, +37.4%, 0.52 Sharpe, 2.17 PF, -22.5% DD)"
+    rules:
+      - enhanced_buy_dip
+      - momentum_reversal
+      - trend_continuation
+      - rsi_oversold
+      - macd_bearish_crossover
+      - trend_alignment
+      - golden_cross
+      - trend_break_warning
+      - death_cross
+      - seasonality
+    exit_strategy:
+      profit_target: 0.10
+      stop_loss: 0.05
+      max_loss_pct: 5.0
+      cooldown_bars: 3
+      win_rate: 0.615
+      trades_per_year: 3
+    min_confidence: 0.50
+
   MP:
     # VALIDATED 2026-03-02: 3/4 gates passed (WF+MC+Regime, Bootstrap marginal at p=0.0414)
     # Only symbol besides PPLT to pass Regime gate — profit well distributed across regimes
@@ -470,6 +517,10 @@ active_tickers:
 # HL:   CONFIRMED BLACKLIST — validated 2026-02-28, 0-1/4 gates passed
 #       36.8% WR, -0.41 train Sharpe, p=0.22, P95 DD=-52%
 #       No statistical edge exists (5 baselines + 13 tune configs tested)
+# LMT:  VALIDATED 2026-03-02: 2/4 gates max (MC+Regime only)
+#       Negative train Sharpe across ALL configs. Best: +4.6%, 0.00 Sharpe. No edge.
+# AVAV: VALIDATED 2026-03-02: 2/4 gates max (WF+Regime only)
+#       MC fails (P95 DD=-43.5%). High return (+104%) but too risky.
 # PAAS: 48.1% WR, +14.2%, 0.17 Sharpe, -55.9% DD = not worth it
 # FCX:  52.9% WR, +15.9%, 0.18 Sharpe, -39.5% DD = not worth it
 # -----------------------------------------------------------------------------

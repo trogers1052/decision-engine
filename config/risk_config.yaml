@@ -48,6 +48,9 @@ sector_groups:
     - CAT
   rare_earth:
     - MP
+  defense:
+    - RTX
+    - ITA
 
 # Value at Risk Configuration
 var:
@@ -75,6 +78,14 @@ symbol_overrides:
     max_position_pct: 0.075        # Half of default 15% — unproven across full history
     risk_per_trade_pct: 0.0075     # Half of default 1.5% risk per trade
     max_atr_pct: 0.08              # Allow higher volatility (small-cap uranium)
+  RTX:
+    # VALIDATED 2026-03-02: 3/4 gates — half position size (only 11 trades, Bootstrap marginal)
+    max_position_pct: 0.075        # Half of default 15% — low trade count needs confirmation
+    risk_per_trade_pct: 0.0075     # Half of default 1.5% risk per trade
+  ITA:
+    # VALIDATED 2026-03-02: 3/4 gates — half position size (Bootstrap marginal p=0.0814)
+    max_position_pct: 0.075        # Half of default 15% — bootstrap CI includes zero
+    risk_per_trade_pct: 0.0075     # Half of default 1.5% risk per trade
   SLV:
     # VALIDATED 2026-03-01: 2/4 gates — half position size (Walk-Forward + Regime failed)
     max_position_pct: 0.075        # Half of default 15% — bull-dependent edge
