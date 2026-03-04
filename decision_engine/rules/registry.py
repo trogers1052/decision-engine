@@ -44,6 +44,11 @@ from .energy_rules import (
     EnergySeasonalityRule,
     MidstreamYieldReversionRule,
 )
+from .tech_rules import (
+    TechEMAPullbackRule,
+    TechMeanReversionRule,
+    TechSeasonalityRule,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +100,11 @@ RULE_REGISTRY: Dict[str, Type[Rule]] = {
     "energy_mean_reversion": EnergyMeanReversionRule,
     "energy_seasonality": EnergySeasonalityRule,
     "midstream_yield_reversion": MidstreamYieldReversionRule,
+
+    # Tech/Growth Sector Rules
+    "tech_ema_pullback": TechEMAPullbackRule,
+    "tech_mean_reversion": TechMeanReversionRule,
+    "tech_seasonality": TechSeasonalityRule,
 }
 
 
