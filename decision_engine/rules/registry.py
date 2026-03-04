@@ -34,6 +34,16 @@ from .mining_rules import (
     SeasonalityRule,
     VolumeBreakoutRule,
 )
+from .financial_rules import (
+    FinancialMeanReversionRule,
+    FinancialSeasonalityRule,
+)
+from .energy_rules import (
+    EnergyMomentumRule,
+    EnergyMeanReversionRule,
+    EnergySeasonalityRule,
+    MidstreamYieldReversionRule,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +85,16 @@ RULE_REGISTRY: Dict[str, Type[Rule]] = {
     "dollar_weakness": DollarWeaknessRule,
     "seasonality": SeasonalityRule,
     "volume_breakout": VolumeBreakoutRule,
+
+    # Financial Sector Rules
+    "financial_mean_reversion": FinancialMeanReversionRule,
+    "financial_seasonality": FinancialSeasonalityRule,
+
+    # Energy Sector Rules
+    "energy_momentum": EnergyMomentumRule,
+    "energy_mean_reversion": EnergyMeanReversionRule,
+    "energy_seasonality": EnergySeasonalityRule,
+    "midstream_yield_reversion": MidstreamYieldReversionRule,
 }
 
 
@@ -218,6 +238,28 @@ class RuleRegistry:
                 params["weak_month_penalty"] = config["weak_month_penalty"]
             if "min_volume_ratio" in config:
                 params["min_volume_ratio"] = config["min_volume_ratio"]
+
+            # Financial Rules parameters
+            if "bb_oversold" in config:
+                params["bb_oversold"] = config["bb_oversold"]
+            if "rsi_floor" in config:
+                params["rsi_floor"] = config["rsi_floor"]
+            if "rsi_ceiling" in config:
+                params["rsi_ceiling"] = config["rsi_ceiling"]
+            if "adx_max" in config:
+                params["adx_max"] = config["adx_max"]
+
+            # Energy Rules parameters
+            if "adx_min" in config:
+                params["adx_min"] = config["adx_min"]
+            if "rsi_max" in config:
+                params["rsi_max"] = config["rsi_max"]
+            if "rsi_extreme_floor" in config:
+                params["rsi_extreme_floor"] = config["rsi_extreme_floor"]
+            if "stoch_oversold" in config:
+                params["stoch_oversold"] = config["stoch_oversold"]
+            if "min_discount_pct" in config:
+                params["min_discount_pct"] = config["min_discount_pct"]
 
             # Validate parameters before creating the rule
             validation_err = RuleRegistry._validate_params(rule_name, params)

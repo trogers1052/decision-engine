@@ -66,7 +66,9 @@ MINER_COMMODITY_MAP = {
 
     # Rare earth / Other
     "MP": "rare_earth",
+    "REMX": "rare_earth",  # VanEck Rare Earth/Strategic Metals ETF
     "IAUM": "gold",  # iShares Gold Micro
+    "AEM": "gold",   # Agnico Eagle Mines — senior gold producer
     "CAT": "industrial",  # Mining equipment
     "ETN": "industrial",
     "AVAV": "industrial",
@@ -78,7 +80,7 @@ SEASONAL_STRENGTH = {
     "silver": [1, 2, 7, 8, 9],          # Strong: Jan-Feb, Jul-Sep
     "uranium": [1, 2, 3, 9, 10, 11],    # Strong: Q1 and Q4
     "platinum": [1, 4, 12],
-    "copper": [1, 2, 3, 4],             # Strong: Q1
+    "copper": [11, 12, 1, 2, 3, 4],     # Strong: Nov-Apr (construction restocking)
     "rare_earth": [1, 2, 3, 10, 11],
     "industrial": [1, 2, 10, 11, 12],
 }
@@ -89,7 +91,7 @@ SEASONAL_WEAKNESS = {
     "silver": [5, 6],
     "uranium": [6, 7],
     "platinum": [5, 6],
-    "copper": [5, 6, 7],
+    "copper": [6, 7, 8, 9],              # Weak: summer lull
     "rare_earth": [5, 6],
     "industrial": [5, 6, 7],
 }
