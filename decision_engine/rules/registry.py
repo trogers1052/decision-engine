@@ -54,6 +54,11 @@ from .utility_rules import (
     UtilityRateReversionRule,
     UtilitySeasonalityRule,
 )
+from .consumer_staples_rules import (
+    ConsumerStaplesMeanReversionRule,
+    ConsumerStaplesPullbackRule,
+    ConsumerStaplesSeasonalityRule,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +120,11 @@ RULE_REGISTRY: Dict[str, Type[Rule]] = {
     "utility_mean_reversion": UtilityMeanReversionRule,
     "utility_rate_reversion": UtilityRateReversionRule,
     "utility_seasonality": UtilitySeasonalityRule,
+
+    # Consumer Staples Sector Rules
+    "consumer_staples_mean_reversion": ConsumerStaplesMeanReversionRule,
+    "consumer_staples_pullback": ConsumerStaplesPullbackRule,
+    "consumer_staples_seasonality": ConsumerStaplesSeasonalityRule,
 }
 
 
