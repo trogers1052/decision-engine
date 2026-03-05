@@ -49,6 +49,11 @@ from .tech_rules import (
     TechMeanReversionRule,
     TechSeasonalityRule,
 )
+from .utility_rules import (
+    UtilityMeanReversionRule,
+    UtilityRateReversionRule,
+    UtilitySeasonalityRule,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +110,11 @@ RULE_REGISTRY: Dict[str, Type[Rule]] = {
     "tech_ema_pullback": TechEMAPullbackRule,
     "tech_mean_reversion": TechMeanReversionRule,
     "tech_seasonality": TechSeasonalityRule,
+
+    # Utility Sector Rules
+    "utility_mean_reversion": UtilityMeanReversionRule,
+    "utility_rate_reversion": UtilityRateReversionRule,
+    "utility_seasonality": UtilitySeasonalityRule,
 }
 
 
