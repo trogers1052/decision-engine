@@ -95,7 +95,7 @@ class DecisionProducer:
             event = {
                 "event_type": "DECISION_UPDATE",
                 "source": "decision-engine",
-                "schema_version": "1.1",
+                "schema_version": "1.2",
                 "timestamp": datetime.utcnow().isoformat() + "Z",
                 "data": {
                     "symbol": signal.symbol,
@@ -122,6 +122,16 @@ class DecisionProducer:
                     },
                 },
             }
+
+            # Include tier data if available
+            if signal.tier:
+                event["data"]["tier_data"] = {
+                    "tier": signal.tier,
+                    "composite_score": round(signal.tier_score, 1),
+                    "confidence_multiplier": signal.tier_confidence_multiplier,
+                    "regime_conditional": signal.regime_conditional,
+                    "allowed_regimes": signal.allowed_regimes,
+                }
 
             # Include trade plan if available
             if trade_plan is not None:

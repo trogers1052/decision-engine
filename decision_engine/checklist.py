@@ -248,13 +248,29 @@ class ChecklistEvaluator:
         is_size_blocked = (
             trade_plan is not None and trade_plan.risk_pct > MAX_RISK_PCT_BLOCKED
         )
+        # Regime-conditional stocks in wrong regime → hard block.
+        # If allowed_regimes is set (from tier data or rules.yaml), the stock
+        # was proven via backtesting to only work in specific regimes.
+        # Trading it outside those regimes is not a "review" — it's a no-go.
+        is_regime_blocked = (
+            allowed_regimes is not None
+            and not result.regime_compatible
+        )
 
-        if is_earnings_blocked or is_size_blocked:
+        if is_earnings_blocked or is_size_blocked or is_regime_blocked:
             result.status = "BLOCKED"
         elif result.all_checks_passed:
             result.status = "GO"
         else:
             result.status = "REVIEW"
+
+        # Detailed log — include regime block reason when applicable
+        regime_detail = regime_id
+        if is_regime_blocked:
+            regime_detail = (
+                f"{regime_id} — BLOCKED: "
+                f"allowed={allowed_regimes}, current={regime_id}"
+            )
 
         logger.info(
             f"Checklist {symbol}: {result.status} — "
@@ -263,7 +279,7 @@ class ChecklistEvaluator:
             f"rr={result.rr_ratio_acceptable} ({result.rr_ratio:.1f}:1), "
             f"earnings={result.no_earnings_imminent} "
             f"({'n/a' if earnings_days is None else f'{earnings_days}d'}), "
-            f"regime={result.regime_compatible} ({regime_id})"
+            f"regime={result.regime_compatible} ({regime_detail})"
         )
 
         return result

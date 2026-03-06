@@ -50,8 +50,15 @@ class AggregatedSignal:
     regime_id: str = "UNKNOWN"
     regime_confidence: float = 0.0
 
+    # Tier ranking metadata (populated from tier_reader)
+    tier: str = ""
+    tier_score: float = 0.0
+    tier_confidence_multiplier: float = 1.0
+    regime_conditional: bool = False
+    allowed_regimes: List[str] = field(default_factory=list)
+
     def to_dict(self) -> dict:
-        return {
+        result = {
             "symbol": self.symbol,
             "signal_type": self.signal_type.value,
             "aggregate_confidence": round(self.aggregate_confidence, 3),
@@ -63,6 +70,15 @@ class AggregatedSignal:
             "regime_confidence": round(self.regime_confidence, 3),
             "timestamp": self.timestamp.isoformat() + "Z",
         }
+        if self.tier:
+            result["tier_data"] = {
+                "tier": self.tier,
+                "composite_score": round(self.tier_score, 1),
+                "confidence_multiplier": self.tier_confidence_multiplier,
+                "regime_conditional": self.regime_conditional,
+                "allowed_regimes": self.allowed_regimes,
+            }
+        return result
 
 
 class ConfidenceAggregator:

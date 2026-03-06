@@ -15,6 +15,7 @@ from .kafka_consumer import IndicatorConsumer
 from .kafka_producer import DecisionProducer
 from .checklist import ChecklistEvaluator, ChecklistResult
 from .market_context import MarketContextReader
+from .tier_reader import TierReader
 from .state_manager import StateManager
 from .position_tracker import PositionTracker
 from .ranker import SymbolRanker, RankingCriteria
@@ -87,6 +88,9 @@ class DecisionEngineService:
 
         # Market context reader (reads regime from context-service via Redis)
         self.market_context_reader: Optional[MarketContextReader] = None
+
+        # Tier reader (reads tier data from stock-service Redis cache)
+        self.tier_reader: Optional[TierReader] = None
 
         # Pre-trade checklist evaluator
         self.checklist_evaluator: Optional[ChecklistEvaluator] = None
@@ -196,6 +200,15 @@ class DecisionEngineService:
             )
             self.market_context_reader.start()
 
+            # Initialize tier reader (reads tier data from stock-service Redis cache)
+            self.tier_reader = TierReader(
+                host=self.settings.redis_host,
+                port=self.settings.redis_port,
+                db=0,  # stock-service writes to db=0
+                password=self.settings.redis_password,
+            )
+            self.tier_reader.start()
+
             # Initialize pre-trade checklist evaluator
             self.checklist_evaluator = ChecklistEvaluator(
                 redis_host=self.settings.redis_host,
@@ -282,6 +295,11 @@ class DecisionEngineService:
                 if symbol not in self._config.get("active_tickers", {}):
                     return
 
+            # Suppress blacklisted symbols (F-tier, zero trades)
+            if self.tier_reader and self.tier_reader.is_blacklisted(symbol):
+                logger.debug(f"Skipping blacklisted symbol: {symbol}")
+                return
+
             # Parse timestamp
             time_str = data.get("time", datetime.utcnow().isoformat())
             try:
@@ -337,9 +355,13 @@ class DecisionEngineService:
                     and aggregated_signal.signal_type == SignalType.BUY
                 ):
                     try:
-                        # Per-symbol allowed_regimes from config (e.g. UUUU: BULL/CHOP only)
-                        symbol_config = self._config.get("active_tickers", {}).get(symbol, {})
-                        allowed_regimes = symbol_config.get("allowed_regimes")
+                        # Allowed regimes: tier data takes precedence over per-symbol config
+                        allowed_regimes = None
+                        if self.tier_reader:
+                            allowed_regimes = self.tier_reader.get_allowed_regimes(symbol)
+                        if allowed_regimes is None:
+                            symbol_config = self._config.get("active_tickers", {}).get(symbol, {})
+                            allowed_regimes = symbol_config.get("allowed_regimes")
                         checklist_result = self.checklist_evaluator.evaluate(
                             trade_plan=trade_plan,
                             regime_id=aggregated_signal.regime_id,
@@ -586,6 +608,30 @@ class DecisionEngineService:
                     f"confidence {original:.3f} → {aggregate_confidence:.3f}"
                 )
 
+        # Apply tier confidence multiplier to BUY signals
+        tier_label = ""
+        tier_score = 0.0
+        tier_confidence_multiplier = 1.0
+        tier_regime_conditional = False
+        tier_allowed_regimes = []
+        if self.tier_reader and signal_type == SignalType.BUY:
+            tier_data = self.tier_reader.get_tier(symbol)
+            if tier_data:
+                tier_label = tier_data.tier
+                tier_score = tier_data.composite_score
+                tier_confidence_multiplier = tier_data.confidence_multiplier
+                tier_regime_conditional = tier_data.allowed_regimes is not None
+                tier_allowed_regimes = tier_data.allowed_regimes or []
+                if tier_confidence_multiplier != 1.0:
+                    original = aggregate_confidence
+                    aggregate_confidence = min(
+                        aggregate_confidence * tier_confidence_multiplier, 1.0
+                    )
+                    logger.debug(
+                        f"{symbol}: tier={tier_label} multiplier={tier_confidence_multiplier:.2f} "
+                        f"confidence {original:.3f} → {aggregate_confidence:.3f}"
+                    )
+
         # Pick primary reasoning from highest confidence signal
         primary_signal = max(signals, key=lambda s: s.confidence)
 
@@ -600,6 +646,11 @@ class DecisionEngineService:
             rules_evaluated=rules_evaluated,
             regime_id=regime_id,
             regime_confidence=regime_confidence,
+            tier=tier_label,
+            tier_score=tier_score,
+            tier_confidence_multiplier=tier_confidence_multiplier,
+            regime_conditional=tier_regime_conditional,
+            allowed_regimes=tier_allowed_regimes,
         )
 
     def _should_publish(self, symbol: str, signal: AggregatedSignal) -> bool:
@@ -800,6 +851,8 @@ class DecisionEngineService:
             self.risk_adapter.shutdown()
         if self.rules_cache:
             self.rules_cache.close()
+        if self.tier_reader:
+            self.tier_reader.stop()
         if self.market_context_reader:
             self.market_context_reader.stop()
         if self.checklist_evaluator:

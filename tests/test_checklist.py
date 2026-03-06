@@ -314,10 +314,10 @@ class TestRegimeCompatibilityCheck(unittest.TestCase):
         self.assertTrue(result.regime_compatible)
 
     def test_allowed_regimes_affects_status(self):
-        """Regime incompatibility with allowed_regimes produces REVIEW status."""
+        """Regime incompatibility with allowed_regimes produces BLOCKED status."""
         ev = _make_evaluator()
         result = ev.evaluate(_make_plan(), "BEAR", "UUUU", allowed_regimes=["BULL", "CHOP"])
-        self.assertEqual(result.status, "REVIEW")
+        self.assertEqual(result.status, "BLOCKED")
         self.assertFalse(result.all_checks_passed)
 
 
