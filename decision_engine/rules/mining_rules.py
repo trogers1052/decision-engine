@@ -184,7 +184,7 @@ class CommodityBreakoutRule(Rule):
             )
 
         # Volume confirmation
-        volume_ratio = volume / avg_volume if avg_volume > 0 else 1.0
+        volume_ratio = volume / avg_volume if avg_volume > 0 else 0.0
 
         # Calculate confidence
         base_confidence = 0.55

@@ -29,8 +29,11 @@ portfolio_risk:
   min_cash_pct: 0.05               # Minimum cash buffer
   max_open_positions: 5            # Max concurrent open positions
   max_sector_exposure_pct: 0.40    # Max 40% of portfolio in any one sector
+  max_portfolio_heat_pct: 0.08     # Max 8% total portfolio risk (sum of per-position risks)
+  max_sector_positions: 2          # Max 2 concurrent positions in same sector group
   drawdown_threshold_pct: 0.10     # 10% drawdown from peak triggers size reduction
   drawdown_size_reduction: 0.50    # Halve position sizes when in drawdown
+  drawdown_halt_pct: 0.15          # 15% drawdown from peak blocks all new entries
 
 # Sector Groups — symbols grouped by correlated sector
 # Used for sector concentration limits
@@ -46,11 +49,17 @@ sector_groups:
     - PPLT
   industrial:
     - CAT
+    - ETN
   rare_earth:
     - MP
   defense:
     - RTX
     - ITA
+    - AVAV
+  semiconductor:
+    - APH
+  energy:
+    - XLE
 
 # Value at Risk Configuration
 var:
@@ -65,6 +74,17 @@ trade_risk:
   max_atr_pct: 0.05                # Reject if ATR > 5% of price
   require_above_sma200: true       # BUY only above 200 SMA
   min_volume_pct: 0.50             # Minimum 50% of average volume
+
+# Capital Temperature Gauge — dynamic position sizing based on market stress
+capital_temperature:
+  enabled: true
+  max_reduction: 0.30              # At max temperature, reduce sizes by 30%
+  vix_weight: 0.60                 # VIX contributes 60% of temperature
+  hy_spread_weight: 0.40           # HY spread contributes 40%
+  vix_floor: 15.0                  # Below this VIX = 0 score (calm)
+  vix_ceiling: 40.0                # Above this VIX = 1.0 score (crisis)
+  hy_floor: 3.5                    # Below this HY = 0 score (tight)
+  hy_ceiling: 8.0                  # Above this HY = 1.0 score (crisis)
 
 # Symbol-Specific Overrides
 symbol_overrides:

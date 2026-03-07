@@ -34,6 +34,12 @@ DEFAULT_POSITION_SIZE_MULTIPLIER = 0.5  # conservative for unranked
 DEFAULT_TIER_LABEL = ""
 
 
+# Trade count floor — symbols with fewer trades get capped at C-tier multipliers
+TRADE_COUNT_FLOOR = 20
+C_TIER_MAX_CONFIDENCE = 0.85
+C_TIER_MAX_POSITION_SIZE = 0.50
+
+
 @dataclass
 class TierData:
     """Cached tier data for a symbol."""
@@ -44,6 +50,7 @@ class TierData:
     position_size_multiplier: float = DEFAULT_POSITION_SIZE_MULTIPLIER
     blacklisted: bool = False
     allowed_regimes: Optional[List[str]] = None  # None = unrestricted
+    trade_count: int = 0
     fetched_at: float = 0.0  # time.time() when fetched
 
 
@@ -119,7 +126,7 @@ class TierReader:
             if not raw:
                 return None
             data = json.loads(raw)
-            return TierData(
+            td = TierData(
                 symbol=data.get("symbol", symbol),
                 tier=data.get("tier", ""),
                 composite_score=float(data.get("composite_score", 0.0)),
@@ -127,8 +134,26 @@ class TierReader:
                 position_size_multiplier=float(data.get("position_size_multiplier", DEFAULT_POSITION_SIZE_MULTIPLIER)),
                 blacklisted=bool(data.get("blacklisted", False)),
                 allowed_regimes=data.get("allowed_regimes"),
+                trade_count=int(data.get("trade_count", 0)),
                 fetched_at=time.time(),
             )
+
+            # Trade count floor: cap at C-tier multipliers if insufficient data
+            if 0 < td.trade_count < TRADE_COUNT_FLOOR:
+                capped = False
+                if td.confidence_multiplier > C_TIER_MAX_CONFIDENCE:
+                    td.confidence_multiplier = C_TIER_MAX_CONFIDENCE
+                    capped = True
+                if td.position_size_multiplier > C_TIER_MAX_POSITION_SIZE:
+                    td.position_size_multiplier = C_TIER_MAX_POSITION_SIZE
+                    capped = True
+                if capped:
+                    logger.info(
+                        f"Trade count floor: {td.symbol} has {td.trade_count} trades "
+                        f"(<{TRADE_COUNT_FLOOR}), capped at C-tier multipliers"
+                    )
+
+            return td
         except (redis.RedisError, json.JSONDecodeError, ValueError, TypeError) as exc:
             logger.warning(f"Failed to fetch tier data for {symbol}: {exc}")
             return None

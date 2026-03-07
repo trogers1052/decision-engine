@@ -16,6 +16,7 @@ from .kafka_producer import DecisionProducer
 from .checklist import ChecklistEvaluator, ChecklistResult
 from .market_context import MarketContextReader
 from .tier_reader import TierReader
+from .daily_loss_monitor import DailyLossMonitor
 from .state_manager import StateManager
 from .position_tracker import PositionTracker
 from .ranker import SymbolRanker, RankingCriteria
@@ -91,6 +92,9 @@ class DecisionEngineService:
 
         # Tier reader (reads tier data from stock-service Redis cache)
         self.tier_reader: Optional[TierReader] = None
+
+        # Daily loss circuit breaker (reads equity data from Redis)
+        self.daily_loss_monitor: Optional[DailyLossMonitor] = None
 
         # Pre-trade checklist evaluator
         self.checklist_evaluator: Optional[ChecklistEvaluator] = None
@@ -209,6 +213,16 @@ class DecisionEngineService:
             )
             self.tier_reader.start()
 
+            # Initialize daily loss circuit breaker (reads equity from Redis)
+            self.daily_loss_monitor = DailyLossMonitor(
+                host=self.settings.redis_host,
+                port=self.settings.redis_port,
+                db=0,  # robinhood-sync writes to db=0
+                password=self.settings.redis_password,
+                threshold_pct=self._config.get("daily_loss_threshold_pct", 0.08),
+            )
+            self.daily_loss_monitor.start()
+
             # Initialize pre-trade checklist evaluator
             self.checklist_evaluator = ChecklistEvaluator(
                 redis_host=self.settings.redis_host,
@@ -265,6 +279,11 @@ class DecisionEngineService:
             symbol = data.get("symbol")
             indicators = data.get("indicators", {})
             data_quality = data.get("data_quality", {})
+
+            # Flow log: signal evaluation start
+            price = indicators.get("close", 0)
+            regime = self.market_context_reader.get_regime() if self.market_context_reader else "UNKNOWN"
+            logger.debug(f"Evaluating {symbol} price=${price:.2f} regime={regime}")
 
             if not symbol or not indicators:
                 logger.debug("Missing symbol or indicators in event")
@@ -327,8 +346,13 @@ class DecisionEngineService:
                     and aggregated_signal.signal_type == SignalType.BUY
                 ):
                     try:
+                        # Fetch tier-based position size multiplier
+                        psm = 1.0
+                        if self.tier_reader:
+                            psm = self.tier_reader.get_position_size_multiplier(symbol)
                         trade_plan = self.trade_plan_engine.generate(
-                            aggregated_signal, indicators
+                            aggregated_signal, indicators,
+                            position_size_multiplier=psm,
                         )
                         if trade_plan.rr_warning:
                             logger.warning(
@@ -408,6 +432,19 @@ class DecisionEngineService:
                     # Check risk for BUY signals
                     risk_result = None
                     should_publish = True
+
+                    # Daily loss circuit breaker: suppress BUY signals when
+                    # daily loss exceeds threshold (e.g. 8%).
+                    if (
+                        self.daily_loss_monitor
+                        and aggregated_signal.signal_type == SignalType.BUY
+                        and self.daily_loss_monitor.is_halted()
+                    ):
+                        logger.warning(
+                            f"Daily loss circuit breaker: suppressing BUY for {symbol} "
+                            f"(daily P&L: {self.daily_loss_monitor.get_daily_pnl_pct():.1%})"
+                        )
+                        should_publish = False
 
                     if (
                         self.risk_adapter
@@ -532,10 +569,16 @@ class DecisionEngineService:
 
                 if result.signal == SignalType.BUY:
                     buy_signals.append(signal)
-                    logger.debug(f"  BUY signal from {rule.name}: {result.reasoning}")
+                    logger.info(
+                        f"Rule triggered: {rule.name} -> BUY {symbol} "
+                        f"(confidence={result.confidence:.2f})"
+                    )
                 elif result.signal == SignalType.SELL:
                     sell_signals.append(signal)
-                    logger.debug(f"  SELL signal from {rule.name}: {result.reasoning}")
+                    logger.info(
+                        f"Rule triggered: {rule.name} -> SELL {symbol} "
+                        f"(confidence={result.confidence:.2f})"
+                    )
                 else:
                     watch_signals.append(signal)
 
@@ -543,6 +586,12 @@ class DecisionEngineService:
         aggregation_config = self._config.get("aggregation", {})
         require_consensus = aggregation_config.get("require_consensus", False)
         consensus_min_rules = aggregation_config.get("consensus_min_rules", 1)
+
+        # Log evaluation summary at debug level (per-symbol, frequent)
+        logger.debug(
+            f"Rules evaluated for {symbol}: {rules_evaluated} checked, "
+            f"{len(buy_signals)} BUY, {len(sell_signals)} SELL, {len(watch_signals)} WATCH"
+        )
 
         # Determine dominant signal type.
         # Require a strict majority: ties (equal buy and sell counts) produce no
@@ -603,9 +652,9 @@ class DecisionEngineService:
             if multiplier != 1.0:
                 original = aggregate_confidence
                 aggregate_confidence = min(aggregate_confidence * multiplier, 1.0)
-                logger.debug(
-                    f"{symbol}: regime={regime_id} multiplier={multiplier:.1f} "
-                    f"confidence {original:.3f} → {aggregate_confidence:.3f}"
+                logger.info(
+                    f"Regime multiplier: {symbol} regime={regime_id} "
+                    f"x{multiplier:.2f} confidence {original:.3f} -> {aggregate_confidence:.3f}"
                 )
 
         # Apply tier confidence multiplier to BUY signals
@@ -627,9 +676,10 @@ class DecisionEngineService:
                     aggregate_confidence = min(
                         aggregate_confidence * tier_confidence_multiplier, 1.0
                     )
-                    logger.debug(
-                        f"{symbol}: tier={tier_label} multiplier={tier_confidence_multiplier:.2f} "
-                        f"confidence {original:.3f} → {aggregate_confidence:.3f}"
+                    logger.info(
+                        f"Tier multiplier: {symbol} tier={tier_label} "
+                        f"x{tier_confidence_multiplier:.2f} confidence "
+                        f"{original:.3f} -> {aggregate_confidence:.3f}"
                     )
 
         # Pick primary reasoning from highest confidence signal
@@ -853,6 +903,8 @@ class DecisionEngineService:
             self.rules_cache.close()
         if self.tier_reader:
             self.tier_reader.stop()
+        if self.daily_loss_monitor:
+            self.daily_loss_monitor.stop()
         if self.market_context_reader:
             self.market_context_reader.stop()
         if self.checklist_evaluator:

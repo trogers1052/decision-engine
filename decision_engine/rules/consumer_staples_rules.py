@@ -202,7 +202,7 @@ class ConsumerStaplesMeanReversionRule(Rule):
             )
 
         # Volume check
-        volume_ratio = volume / avg_volume if avg_volume > 0 else 1.0
+        volume_ratio = volume / avg_volume if avg_volume > 0 else 0.0
         if volume_ratio < 0.5:
             return RuleResult(
                 triggered=False,

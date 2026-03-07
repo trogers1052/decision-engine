@@ -59,6 +59,16 @@ from .consumer_staples_rules import (
     ConsumerStaplesPullbackRule,
     ConsumerStaplesSeasonalityRule,
 )
+from .healthcare_rules import (
+    HealthcareMeanReversionRule,
+    HealthcarePullbackRule,
+    HealthcareSeasonalityRule,
+)
+from .industrial_rules import (
+    IndustrialMeanReversionRule,
+    IndustrialPullbackRule,
+    IndustrialSeasonalityRule,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +135,16 @@ RULE_REGISTRY: Dict[str, Type[Rule]] = {
     "consumer_staples_mean_reversion": ConsumerStaplesMeanReversionRule,
     "consumer_staples_pullback": ConsumerStaplesPullbackRule,
     "consumer_staples_seasonality": ConsumerStaplesSeasonalityRule,
+
+    # Healthcare Sector Rules
+    "healthcare_mean_reversion": HealthcareMeanReversionRule,
+    "healthcare_pullback": HealthcarePullbackRule,
+    "healthcare_seasonality": HealthcareSeasonalityRule,
+
+    # Industrial Sector Rules
+    "industrial_mean_reversion": IndustrialMeanReversionRule,
+    "industrial_pullback": IndustrialPullbackRule,
+    "industrial_seasonality": IndustrialSeasonalityRule,
 }
 
 

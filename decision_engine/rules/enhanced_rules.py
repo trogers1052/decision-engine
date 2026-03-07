@@ -107,7 +107,7 @@ class EnhancedBuyDipRule(Rule):
         # ===================
         # FILTER 4: Volume Confirmation (optional but recommended)
         # ===================
-        volume_ratio = volume / avg_volume if avg_volume > 0 else 1.0
+        volume_ratio = volume / avg_volume if avg_volume > 0 else 0.0
         volume_confirmed = volume_ratio >= 0.8  # At least 80% of average volume
 
         if self.require_volume_confirm and not volume_confirmed:
@@ -225,7 +225,7 @@ class MomentumReversalRule(Rule):
         sma200 = context.get_indicator("SMA_200")
         volume = context.get_indicator("volume")
         avg_volume = context.get_indicator("volume_sma_20", volume)
-        volume_ratio = volume / avg_volume if avg_volume > 0 else 1.0
+        volume_ratio = volume / avg_volume if avg_volume > 0 else 0.0
 
         # Require golden cross context (SMA_50 > SMA_200)
         # Without this, MR fires in death cross territory producing worthless trades
@@ -371,7 +371,7 @@ class TrendContinuationRule(Rule):
         close = context.get_indicator("close")
         volume = context.get_indicator("volume")
         avg_volume = context.get_indicator("volume_sma_20", volume)
-        volume_ratio = volume / avg_volume if avg_volume > 0 else 1.0
+        volume_ratio = volume / avg_volume if avg_volume > 0 else 0.0
 
         # Must have full trend alignment
         if not (sma20 > sma50 > sma200):

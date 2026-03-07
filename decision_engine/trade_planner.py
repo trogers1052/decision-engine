@@ -144,6 +144,7 @@ class TradePlanEngine:
         self,
         signal: AggregatedSignal,
         indicators: dict,
+        position_size_multiplier: float = 1.0,
     ) -> TradePlan:
         """
         Generate a complete TradePlan for the given signal + indicators snapshot.
@@ -250,7 +251,10 @@ class TradePlanEngine:
         # ----------------------------------------------------------------
         account_balance = self._get_account_balance()
         shares, dollar_risk, risk_pct, position_value, sizing_warnings = (
-            self._size_position(symbol, entry_price, raw_stop, account_balance, target_1)
+            self._size_position(
+                symbol, entry_price, raw_stop, account_balance, target_1,
+                position_size_multiplier=position_size_multiplier,
+            )
         )
         warnings.extend(sizing_warnings)
 
@@ -282,6 +286,13 @@ class TradePlanEngine:
                 f"Cannot size position: stock at ${entry_price:.2f} "
                 f"exceeds 2% risk budget on ${account_balance:.0f} account"
             )
+
+        logger.info(
+            f"Trade plan generated: {symbol} entry=${entry_price:.2f} "
+            f"stop=${raw_stop:.2f} ({stop_pct_val:.1f}%) "
+            f"target=${target_1:.2f} R:R={rr_ratio:.1f}:1 "
+            f"shares={shares} risk=${dollar_risk:.2f}"
+        )
 
         return TradePlan(
             setup_type=setup_type,
@@ -739,8 +750,13 @@ class TradePlanEngine:
         stop_price: float,
         account_balance: float,
         target_1: float,
+        position_size_multiplier: float = 1.0,
     ) -> tuple[int, float, float, float, list[str]]:
-        """Return (shares, dollar_risk, risk_pct, position_value, warnings)."""
+        """Return (shares, dollar_risk, risk_pct, position_value, warnings).
+
+        position_size_multiplier scales the final share count by tier
+        (e.g. S-tier=1.15x, D-tier=0.65x, F-tier=0.0x).
+        """
         warnings: list[str] = []
 
         if self._sizer is not None:
@@ -753,13 +769,23 @@ class TradePlanEngine:
                     target_price=Decimal(str(round(target_1, 4))),
                 )
                 warnings.extend(result.warnings)
-                return (
-                    result.max_shares,
-                    float(result.dollar_risk),
-                    float(result.risk_pct),
-                    float(result.position_value),
-                    warnings,
-                )
+                shares = result.max_shares
+                dollar_risk = float(result.dollar_risk)
+                risk_pct = float(result.risk_pct)
+                position_value = float(result.position_value)
+
+                # Apply tier-based size multiplier
+                if position_size_multiplier != 1.0 and shares > 0:
+                    shares = max(1, int(shares * position_size_multiplier))
+                    dollar_risk = shares * (entry_price - stop_price)
+                    risk_pct = (dollar_risk / account_balance) * 100 if account_balance > 0 else 0.0
+                    position_value = shares * entry_price
+                    warnings.append(
+                        f"Tier size adjustment: {position_size_multiplier:.0%}x "
+                        f"→ {shares} shares"
+                    )
+
+                return shares, dollar_risk, risk_pct, position_value, warnings
             except Exception as exc:
                 logger.warning(f"PositionSizer error for {symbol}: {exc} — using fallback")
 
@@ -769,6 +795,15 @@ class TradePlanEngine:
         if risk_per_share <= 0:
             return 0, 0.0, 0.0, 0.0, warnings
         shares = int(max_dollar_risk / risk_per_share)
+
+        # Apply tier-based size multiplier
+        if position_size_multiplier != 1.0 and shares > 0:
+            shares = max(1, int(shares * position_size_multiplier))
+            warnings.append(
+                f"Tier size adjustment: {position_size_multiplier:.0%}x "
+                f"→ {shares} shares"
+            )
+
         if shares == 0:
             risk_needed = risk_per_share / account_balance * 100 if account_balance > 0 else 0.0
             warnings.append(

@@ -27,6 +27,11 @@ service:
 # but should NOT be evaluated for trading signals — context-service handles them.
 active_tickers_only: true
 
+# Daily loss circuit breaker — halts all BUY signals when the account drops
+# more than this percentage from the day's opening equity.  SELL signals still
+# pass through.  Set to 0.08 = 8% ($80 on a $1,000 account).
+daily_loss_threshold_pct: 0.08
+
 # -----------------------------------------------------------------------------
 # ENHANCED RULES (Backtested - Primary Strategy)
 # -----------------------------------------------------------------------------

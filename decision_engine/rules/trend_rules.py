@@ -167,7 +167,7 @@ class FullTrendAlignmentRule(Rule):
         confidence = min(0.6 + total_spread / 30, 0.95)
 
         # Volume confirmation — penalize low volume entries
-        volume_ratio = volume / avg_volume if avg_volume > 0 else 1.0
+        volume_ratio = volume / avg_volume if avg_volume > 0 else 0.0
         if volume_ratio < 0.8:
             confidence = max(confidence - 0.10, 0.50)
 
