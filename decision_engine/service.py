@@ -233,7 +233,7 @@ class DecisionEngineService:
                 port=self.settings.redis_port,
                 db=0,  # robinhood-sync writes to db=0
                 password=self.settings.redis_password,
-                threshold_pct=self._config.get("daily_loss_threshold_pct", 0.08),
+                threshold_pct=self._config.get("daily_loss_threshold_pct", 0.05),
             )
             self.daily_loss_monitor.start()
 
@@ -462,7 +462,7 @@ class DecisionEngineService:
                     should_publish = True
 
                     # Daily loss circuit breaker: suppress BUY signals when
-                    # daily loss exceeds threshold (e.g. 8%).
+                    # daily loss exceeds threshold (default 5%).
                     if (
                         self.daily_loss_monitor
                         and aggregated_signal.signal_type == SignalType.BUY
@@ -471,6 +471,22 @@ class DecisionEngineService:
                         logger.warning(
                             f"Daily loss circuit breaker: suppressing BUY for {symbol} "
                             f"(daily P&L: {self.daily_loss_monitor.get_daily_pnl_pct():.1%})"
+                        )
+                        should_publish = False
+
+                    # Stale context gate: suppress BUY signals when
+                    # context-service hasn't published in >30 minutes.
+                    if (
+                        should_publish
+                        and self.market_context_reader
+                        and aggregated_signal.signal_type == SignalType.BUY
+                        and self.market_context_reader.is_stale()
+                    ):
+                        staleness = self.market_context_reader.get_staleness_seconds()
+                        staleness_min = (staleness or 0) / 60
+                        logger.warning(
+                            f"Stale context gate: suppressing BUY for {symbol} "
+                            f"(context {staleness_min:.0f}min old, limit 30min)"
                         )
                         should_publish = False
 

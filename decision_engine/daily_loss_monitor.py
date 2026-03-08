@@ -39,7 +39,7 @@ class DailyLossMonitor:
 
     Usage::
 
-        monitor = DailyLossMonitor(host="redis", port=6379, db=0, threshold_pct=0.08)
+        monitor = DailyLossMonitor(host="redis", port=6379, db=0, threshold_pct=0.05)
         monitor.start()
         if monitor.is_halted():
             # suppress BUY signal
@@ -52,7 +52,7 @@ class DailyLossMonitor:
         port: int,
         db: int,
         password: str = "",
-        threshold_pct: float = 0.08,
+        threshold_pct: float = 0.05,
         refresh_interval: int = 30,
     ):
         self._host = host

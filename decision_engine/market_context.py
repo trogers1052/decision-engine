@@ -11,12 +11,19 @@ Regime multipliers are applied to BUY signal confidence only:
   SIDEWAYS → 0.7  (reduce confidence — chop kills momentum strategies)
   BEAR     → 0.3  (strong reduction — most BUY signals are false positives)
   UNKNOWN  → 1.0  (no context yet — don't penalise at startup)
+
+Staleness gate (added per portfolio risk audit):
+  If context-service stops publishing, the last-known regime would persist
+  silently forever.  We now track `updated_at` from the context payload and
+  flag the context as stale when it exceeds STALE_THRESHOLD_SECONDS during
+  market hours.  Decision-engine should suppress BUY signals when stale.
 """
 
 import json
 import logging
 import threading
 import time
+from datetime import datetime, timezone
 from typing import Optional
 
 import redis
@@ -30,6 +37,11 @@ REGIME_MULTIPLIERS: dict[str, float] = {
     "BEAR": 0.3,
     "UNKNOWN": 1.0,
 }
+
+# Context is considered stale after 30 minutes without an update from
+# context-service.  During market hours this means the service crashed or
+# Kafka/Redis connectivity was lost.
+STALE_THRESHOLD_SECONDS = 30 * 60  # 30 minutes
 
 
 class MarketContextReader:
@@ -64,6 +76,7 @@ class MarketContextReader:
         self._client: Optional[redis.Redis] = None
         self._regime: str = "UNKNOWN"
         self._regime_confidence: float = 0.0
+        self._context_updated_at: Optional[float] = None  # epoch seconds from context payload
         self._lock = threading.RLock()
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
@@ -154,6 +167,28 @@ class MarketContextReader:
         with self._lock:
             return REGIME_MULTIPLIERS.get(self._regime, 1.0)
 
+    def is_stale(self) -> bool:
+        """Return True if context data is older than STALE_THRESHOLD_SECONDS.
+
+        Returns False (not stale) when:
+          - No context has ever been received (startup grace period)
+          - Context was updated recently
+        """
+        with self._lock:
+            if self._context_updated_at is None:
+                # Never received context — don't penalise during startup.
+                # The regime is UNKNOWN which already gives neutral multiplier.
+                return False
+            age = time.time() - self._context_updated_at
+            return age > STALE_THRESHOLD_SECONDS
+
+    def get_staleness_seconds(self) -> Optional[float]:
+        """Return how many seconds since the last context update, or None."""
+        with self._lock:
+            if self._context_updated_at is None:
+                return None
+            return time.time() - self._context_updated_at
+
     # ------------------------------------------------------------------
     # Background thread
     # ------------------------------------------------------------------
@@ -178,6 +213,21 @@ class MarketContextReader:
             new_regime = str(data.get("regime", "UNKNOWN")).upper()
             new_confidence = float(data.get("regime_confidence", 0.0))
 
+            # Extract updated_at for staleness tracking.
+            # context-service publishes this as an ISO timestamp string.
+            new_updated_at: Optional[float] = None
+            raw_ts = data.get("updated_at") or data.get("timestamp")
+            if raw_ts:
+                try:
+                    dt = datetime.fromisoformat(str(raw_ts).replace("Z", "+00:00"))
+                    new_updated_at = dt.timestamp()
+                except (ValueError, TypeError):
+                    # Fall back to "now" — we at least know the key was refreshed.
+                    new_updated_at = time.time()
+            else:
+                # No timestamp in payload — use current time as best estimate.
+                new_updated_at = time.time()
+
         except (redis.RedisError, json.JSONDecodeError, ValueError, TypeError) as exc:
             logger.warning(f"Failed to refresh market context from Redis: {exc}")
             return
@@ -191,3 +241,4 @@ class MarketContextReader:
                 )
             self._regime = new_regime
             self._regime_confidence = new_confidence
+            self._context_updated_at = new_updated_at
