@@ -41,10 +41,16 @@ ENERGY_SECTOR_MAP = {
     "COP": "upstream",
     "EOG": "upstream",
     "OXY": "upstream",
+    "FANG": "upstream",
 
     # Midstream MLPs (fee-based, high yield, low commodity sensitivity)
     "EPD": "midstream",
     "ET": "midstream",
+    "KMI": "midstream",
+    "OKE": "midstream",
+
+    # Downstream / Refining (hedged exposure, margin-driven)
+    "PSX": "integrated",
 
     # Energy ETFs
     "XLE": "energy_etf",

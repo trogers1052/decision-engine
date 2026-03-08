@@ -10,7 +10,7 @@ Regime multipliers are applied to BUY signal confidence only:
   BULL     → 1.0  (no change — full confidence in a trending market)
   SIDEWAYS → 0.7  (reduce confidence — chop kills momentum strategies)
   BEAR     → 0.3  (strong reduction — most BUY signals are false positives)
-  UNKNOWN  → 1.0  (no context yet — don't penalise at startup)
+  UNKNOWN  → 0.5  (cautious — no regime data means reduced confidence)
 
 Staleness gate (added per portfolio risk audit):
   If context-service stops publishing, the last-known regime would persist
@@ -35,7 +35,7 @@ REGIME_MULTIPLIERS: dict[str, float] = {
     "BULL": 1.0,
     "SIDEWAYS": 0.7,
     "BEAR": 0.3,
-    "UNKNOWN": 1.0,
+    "UNKNOWN": 0.5,
 }
 
 # Context is considered stale after 30 minutes without an update from

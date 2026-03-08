@@ -13,6 +13,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from .config import Settings
+from .metrics import start_metrics_server
 from .service import DecisionEngineService
 
 # Configure logging
@@ -29,11 +30,17 @@ _service: DecisionEngineService = None
 
 
 def signal_handler(signum, frame):
-    """Handle shutdown signals."""
+    """Handle shutdown signals by stopping the consumer loop.
+
+    Full resource cleanup happens in the finally block of main().
+    Closing the consumer unblocks service.start(), allowing the main
+    thread to reach the finally block naturally.
+    """
     logger.info(f"Received signal {signum}, shutting down...")
-    if _service:
-        _service.shutdown()
-    sys.exit(0)
+    if _service and _service.consumer:
+        _service.consumer.close()
+    elif not _service:
+        sys.exit(0)  # not initialized yet, nothing to clean up
 
 
 def _start_health_server() -> None:
@@ -64,6 +71,7 @@ def main():
     global _service
 
     _start_health_server()
+    start_metrics_server()
 
     logger.info("Decision Engine starting...")
 
@@ -86,11 +94,14 @@ def main():
         # Start the service (blocks until shutdown)
         _service.start()
 
+    except KeyboardInterrupt:
+        logger.info("Interrupted by user")
     except Exception as e:
         logger.error(f"Fatal error: {e}", exc_info=True)
+        sys.exit(1)
+    finally:
         if _service:
             _service.shutdown()
-        sys.exit(1)
 
 
 if __name__ == "__main__":

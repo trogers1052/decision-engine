@@ -19,6 +19,9 @@ psycopg2-binary>=2.9.0
 # Installed from local source in Dockerfile (COPY risk-engine/)
 # For local dev: pip install -e ../risk-engine/
 
+# Metrics
+prometheus-client>=0.20.0
+
 # Testing
 pytest>=7.0.0
 pytest-asyncio>=0.21.0

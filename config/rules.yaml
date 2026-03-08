@@ -251,6 +251,27 @@ active_tickers:
   # Backtested 2021-01-01 to 2026-02-22, daily signals + 5min exits
   # =========================================================================
 
+  AEM:
+    # VALIDATED 2026-03-08: 3/4 gates passed (WB+BS+MC, Regime fails — gold miner naturally bull-concentrated)
+    # Walk-Backward ROBUST (2/3 regimes pass): 2022 Bear +2.0%, 2023-2024 Chop +28.6%
+    # Bootstrap p=0.0003 (strongest edge signal), MC Ruin=0%, P95 DD=-19.2%
+    # Regime fails at >70% bull concentration — expected for gold miner (not a disqualifier)
+    # 4-rule lean mining set: momentum_reversal + commodity_breakout + seasonality + death_cross
+    description: "Agnico Eagle Mines - Gold (78.3% WR, +171.9%, 1.40 Sharpe, 4.72 PF, -15.6% DD)"
+    rules:
+      - momentum_reversal
+      - commodity_breakout
+      - seasonality
+      - death_cross
+    exit_strategy:
+      profit_target: 0.07
+      stop_loss: 0.08
+      max_loss_pct: 8.0
+      cooldown_bars: 10
+      win_rate: 0.783
+      trades_per_year: 4
+    min_confidence: 0.4
+
   CCJ:
     description: "Cameco - Uranium (63.3% WR, +161.2%, 0.99 Sharpe, 2.97 PF)"
     rules:

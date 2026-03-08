@@ -55,8 +55,8 @@ class TestGetMultiplierBuySignals(unittest.TestCase):
     def test_bear_regime_returns_0_3(self):
         self.assertAlmostEqual(_make_reader("BEAR").get_multiplier("BUY"), 0.3)
 
-    def test_unknown_regime_returns_1_0(self):
-        self.assertAlmostEqual(_make_reader("UNKNOWN").get_multiplier("BUY"), 1.0)
+    def test_unknown_regime_returns_0_5(self):
+        self.assertAlmostEqual(_make_reader("UNKNOWN").get_multiplier("BUY"), 0.5)
 
     def test_unexpected_regime_falls_back_to_1_0(self):
         # An unrecognised regime string must not crash — fall back to 1.0.
@@ -116,9 +116,9 @@ class TestDefaultState(unittest.TestCase):
     def test_default_confidence_is_zero(self):
         self.assertAlmostEqual(self.reader.get_regime_confidence(), 0.0)
 
-    def test_default_multiplier_buy_is_1_0(self):
-        # UNKNOWN → 1.0; no penalty at startup before first publish
-        self.assertAlmostEqual(self.reader.get_multiplier("BUY"), 1.0)
+    def test_default_multiplier_buy_is_0_5(self):
+        # UNKNOWN → 0.5; cautious default before first context publish
+        self.assertAlmostEqual(self.reader.get_multiplier("BUY"), 0.5)
 
 
 # ---------------------------------------------------------------------------
