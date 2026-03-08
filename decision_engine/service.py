@@ -785,6 +785,24 @@ class DecisionEngineService:
                     f"{original:.3f} -> {aggregate_confidence:.3f}"
                 )
 
+        # Stage 5: Signal outcome quality multiplier (opt-in)
+        # Based on whether signals actually hit their targets or stops.
+        if self.feedback_reader and signal_type == SignalType.BUY:
+            rule_names = [s.rule_name for s in signals]
+            outcome_mult = self.feedback_reader.get_aggregate_outcome_multiplier(
+                rule_names, regime_id
+            )
+            if outcome_mult != 1.0:
+                original = aggregate_confidence
+                aggregate_confidence = min(
+                    aggregate_confidence * outcome_mult, 1.0
+                )
+                logger.info(
+                    f"Outcome quality multiplier: {symbol} rules={rule_names} "
+                    f"regime={regime_id} x{outcome_mult:.2f} confidence "
+                    f"{original:.3f} -> {aggregate_confidence:.3f}"
+                )
+
         # Pick primary reasoning from highest confidence signal
         primary_signal = max(signals, key=lambda s: s.confidence)
 

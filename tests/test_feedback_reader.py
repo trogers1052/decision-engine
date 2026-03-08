@@ -168,12 +168,24 @@ class TestDefaultState(unittest.TestCase):
 
 class TestRefresh(unittest.TestCase):
 
+    def _mock_redis_get(self, accuracy_payload=None, outcome_payload=None):
+        """Return a mock Redis whose .get(key) returns the right payload per key."""
+        mock_redis = MagicMock()
+
+        def get_side_effect(key):
+            if key == "feedback:accuracy":
+                return json.dumps(accuracy_payload) if accuracy_payload is not None else None
+            if key == "feedback:outcome_quality":
+                return json.dumps(outcome_payload) if outcome_payload is not None else None
+            return None
+
+        mock_redis.get.side_effect = get_side_effect
+        return mock_redis
+
     def _refresh_with(self, payload) -> FeedbackAccuracyReader:
         """Create a reader, call _refresh with mocked Redis returning payload."""
-        mock_redis = MagicMock()
-        mock_redis.get.return_value = json.dumps(payload) if payload is not None else None
         reader = _make_reader()
-        reader._client = mock_redis
+        reader._client = self._mock_redis_get(accuracy_payload=payload)
         reader._refresh()
         return reader
 
@@ -187,9 +199,7 @@ class TestRefresh(unittest.TestCase):
     def test_refresh_none_key_leaves_data_unchanged(self):
         """If Redis key absent, data stays at previous value."""
         reader = _make_reader_with_data(SAMPLE_DATA)
-        mock_redis = MagicMock()
-        mock_redis.get.return_value = None
-        reader._client = mock_redis
+        reader._client = self._mock_redis_get()
         reader._refresh()
         self.assertEqual(reader.get_entry_count(), len(SAMPLE_DATA))
 
@@ -219,15 +229,38 @@ class TestRefresh(unittest.TestCase):
         """A new refresh completely replaces old data."""
         reader = _make_reader_with_data(SAMPLE_DATA)
         new_data = {"NewRule:BULL": {"trade_rate": 0.50, "multiplier": 1.00, "signal_count": 30}}
-        mock_redis = MagicMock()
-        mock_redis.get.return_value = json.dumps(new_data)
-        reader._client = mock_redis
+        reader._client = self._mock_redis_get(accuracy_payload=new_data)
         reader._refresh()
         self.assertEqual(reader.get_entry_count(), 1)
         # Old data gone
         self.assertAlmostEqual(
             reader.get_multiplier("MomentumReversal", "BULL"), 1.0
         )
+
+    def test_refresh_loads_outcome_data(self):
+        """Outcome quality data is loaded from the outcome key."""
+        outcome = {
+            "MomentumReversal:BULL": {"win_rate": 0.80, "multiplier": 1.20, "signal_count": 15},
+        }
+        reader = _make_reader()
+        reader._client = self._mock_redis_get(outcome_payload=outcome)
+        reader._refresh()
+        self.assertEqual(reader.get_outcome_entry_count(), 1)
+        self.assertAlmostEqual(
+            reader.get_outcome_multiplier("MomentumReversal", "BULL"), 1.20
+        )
+
+    def test_refresh_loads_both_channels(self):
+        """Both accuracy and outcome are loaded in a single refresh."""
+        outcome = {"Rule1:BULL": {"win_rate": 0.67, "multiplier": 1.0, "signal_count": 10}}
+        reader = _make_reader()
+        reader._client = self._mock_redis_get(
+            accuracy_payload=SAMPLE_DATA,
+            outcome_payload=outcome,
+        )
+        reader._refresh()
+        self.assertEqual(reader.get_entry_count(), len(SAMPLE_DATA))
+        self.assertEqual(reader.get_outcome_entry_count(), 1)
 
 
 # ---------------------------------------------------------------------------
