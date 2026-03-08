@@ -10,7 +10,11 @@ import time
 import unittest
 from unittest.mock import MagicMock, patch, PropertyMock
 
-from decision_engine.market_context import MarketContextReader, REGIME_MULTIPLIERS
+from decision_engine.market_context import (
+    MarketContextReader,
+    REGIME_MULTIPLIERS,
+    STALE_THRESHOLD_SECONDS,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -306,6 +310,105 @@ class TestThreadSafety(unittest.TestCase):
             t.join()
 
         self.assertEqual(errors, [], f"Thread safety violations: {errors}")
+
+
+# ---------------------------------------------------------------------------
+# is_stale — staleness detection
+# ---------------------------------------------------------------------------
+
+class TestStaleness(unittest.TestCase):
+
+    def test_no_context_received_is_not_stale(self):
+        """Before any context is received, is_stale() returns False (startup grace)."""
+        reader = _make_reader("UNKNOWN")
+        self.assertFalse(reader.is_stale())
+
+    def test_recent_context_is_not_stale(self):
+        """Context updated 1 minute ago should not be stale."""
+        reader = _make_reader("BULL")
+        reader._context_updated_at = time.time() - 60  # 1 minute ago
+        self.assertFalse(reader.is_stale())
+
+    def test_old_context_is_stale(self):
+        """Context updated 45 minutes ago exceeds 30-minute threshold."""
+        reader = _make_reader("BULL")
+        reader._context_updated_at = time.time() - (45 * 60)
+        self.assertTrue(reader.is_stale())
+
+    def test_just_under_threshold_is_not_stale(self):
+        """Context just under the threshold should not be stale."""
+        reader = _make_reader("BULL")
+        reader._context_updated_at = time.time() - STALE_THRESHOLD_SECONDS + 5
+        self.assertFalse(reader.is_stale())
+
+    def test_one_second_past_threshold_is_stale(self):
+        """Context one second past the threshold should be stale."""
+        reader = _make_reader("BULL")
+        reader._context_updated_at = time.time() - STALE_THRESHOLD_SECONDS - 1
+        self.assertTrue(reader.is_stale())
+
+    def test_get_staleness_seconds_returns_none_before_first_update(self):
+        reader = _make_reader("UNKNOWN")
+        self.assertIsNone(reader.get_staleness_seconds())
+
+    def test_get_staleness_seconds_returns_age(self):
+        reader = _make_reader("BULL")
+        reader._context_updated_at = time.time() - 120
+        staleness = reader.get_staleness_seconds()
+        self.assertIsNotNone(staleness)
+        self.assertAlmostEqual(staleness, 120, delta=2)
+
+
+class TestRefreshSetsUpdatedAt(unittest.TestCase):
+
+    def _refresh_with(self, payload) -> MarketContextReader:
+        mock_redis = MagicMock()
+        mock_redis.get.return_value = json.dumps(payload) if payload is not None else None
+        reader = _make_connected_reader(mock_redis)
+        reader._refresh()
+        return reader
+
+    def test_refresh_with_updated_at_sets_timestamp(self):
+        """Refresh should parse updated_at from context-service payload."""
+        from datetime import datetime, timezone
+        now_iso = datetime.now(timezone.utc).isoformat()
+        reader = self._refresh_with({
+            "regime": "BULL",
+            "regime_confidence": 0.85,
+            "updated_at": now_iso,
+        })
+        self.assertIsNotNone(reader._context_updated_at)
+        self.assertFalse(reader.is_stale())  # just set with current time
+
+    def test_refresh_with_timestamp_fallback(self):
+        """If updated_at missing but timestamp present, use that."""
+        reader = self._refresh_with({
+            "regime": "BEAR",
+            "regime_confidence": 0.60,
+            "timestamp": "2026-03-07T15:30:00+00:00",
+        })
+        self.assertIsNotNone(reader._context_updated_at)
+
+    def test_refresh_without_any_timestamp_uses_now(self):
+        """If no timestamp fields, fall back to current time."""
+        before = time.time()
+        reader = self._refresh_with({
+            "regime": "SIDEWAYS",
+            "regime_confidence": 0.70,
+        })
+        after = time.time()
+        self.assertIsNotNone(reader._context_updated_at)
+        self.assertGreaterEqual(reader._context_updated_at, before)
+        self.assertLessEqual(reader._context_updated_at, after)
+
+    def test_refresh_none_key_does_not_update_timestamp(self):
+        """If Redis key is absent, updated_at should remain unchanged."""
+        mock_redis = MagicMock()
+        mock_redis.get.return_value = None
+        reader = _make_connected_reader(mock_redis)
+        reader._context_updated_at = 12345.0
+        reader._refresh()
+        self.assertEqual(reader._context_updated_at, 12345.0)
 
 
 if __name__ == "__main__":
