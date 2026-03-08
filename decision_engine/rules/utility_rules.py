@@ -147,7 +147,7 @@ class UtilityMeanReversionRule(Rule):
         bb_pct = context.get_indicator("BB_PERCENT")
         adx = context.get_indicator("ADX_14")
         volume = context.get_indicator("volume")
-        avg_volume = context.get_indicator("volume_sma_20", volume)
+        avg_volume = context.get_indicator("volume_sma_20")
         stoch_k = context.get_indicator("Stochastic_K")
 
         sub_sector = UTILITY_SECTOR_MAP.get(context.symbol.upper())

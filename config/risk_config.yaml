@@ -117,5 +117,11 @@ symbol_overrides:
     max_position_pct: 0.30         # Index ETF - larger position allowed
     max_atr_pct: 0.03              # Tighter volatility for index
 
+# Portfolio-level circuit breaker (reads from stop-loss-guardian via Redis)
+# These supplement the risk-engine's portfolio checks with real-time state
+portfolio_monitoring:
+  portfolio_max_stops_per_day: 3       # Block new entries after N stops hit today
+  portfolio_max_actual_heat: 0.10      # Block if actual heat (real stop distances) exceeds 10%
+
 # Logging
 log_level: "INFO"

@@ -55,6 +55,16 @@ class Settings(BaseSettings):
     db_password: str = Field(..., description="PostgreSQL password (required)")
     db_name: str = Field("trading_platform", description="Database name")
 
+    # Feedback accuracy (Stage 4 confidence multiplier — opt-in)
+    feedback_accuracy_enabled: bool = Field(
+        False,
+        description="Enable Stage 4 feedback accuracy multiplier for BUY signals"
+    )
+    feedback_accuracy_redis_key: str = Field(
+        "feedback:accuracy",
+        description="Redis key for feedback accuracy cache (written by stock-service)"
+    )
+
     # Rule configuration
     rules_config_path: str = Field(
         "config/rules.yaml",

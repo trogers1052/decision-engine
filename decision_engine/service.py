@@ -14,9 +14,11 @@ from .config import Settings
 from .kafka_consumer import IndicatorConsumer
 from .kafka_producer import DecisionProducer
 from .checklist import ChecklistEvaluator, ChecklistResult
+from .feedback_reader import FeedbackAccuracyReader
 from .market_context import MarketContextReader
 from .tier_reader import TierReader
 from .daily_loss_monitor import DailyLossMonitor
+from .portfolio_risk_reader import PortfolioRiskReader
 from .state_manager import StateManager
 from .position_tracker import PositionTracker
 from .ranker import SymbolRanker, RankingCriteria
@@ -27,13 +29,8 @@ from .models.trade_plan import TradePlan
 from .rules_cache import RulesCache
 from .trade_planner import TradePlanEngine
 
-# Risk engine integration (optional)
-try:
-    from risk_engine import RiskAdapter
-    HAS_RISK_ENGINE = True
-except ImportError:
-    HAS_RISK_ENGINE = False
-    RiskAdapter = None
+# Risk engine integration (mandatory for BUY signal gating)
+from risk_engine import RiskAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +92,12 @@ class DecisionEngineService:
 
         # Daily loss circuit breaker (reads equity data from Redis)
         self.daily_loss_monitor: Optional[DailyLossMonitor] = None
+
+        # Portfolio risk reader (reads guardian's portfolio state from Redis)
+        self.portfolio_risk_reader: Optional[PortfolioRiskReader] = None
+
+        # Feedback accuracy reader (reads per-rule accuracy from stock-service Redis cache)
+        self.feedback_reader: Optional[FeedbackAccuracyReader] = None
 
         # Pre-trade checklist evaluator
         self.checklist_evaluator: Optional[ChecklistEvaluator] = None
@@ -213,6 +216,17 @@ class DecisionEngineService:
             )
             self.tier_reader.start()
 
+            # Initialize feedback accuracy reader (Stage 4 — opt-in)
+            if getattr(self.settings, 'feedback_accuracy_enabled', False):
+                self.feedback_reader = FeedbackAccuracyReader(
+                    host=self.settings.redis_host,
+                    port=self.settings.redis_port,
+                    db=0,  # stock-service writes to db=0
+                    key=getattr(self.settings, 'feedback_accuracy_redis_key', 'feedback:accuracy'),
+                    password=self.settings.redis_password,
+                )
+                self.feedback_reader.start()
+
             # Initialize daily loss circuit breaker (reads equity from Redis)
             self.daily_loss_monitor = DailyLossMonitor(
                 host=self.settings.redis_host,
@@ -223,6 +237,15 @@ class DecisionEngineService:
             )
             self.daily_loss_monitor.start()
 
+            # Initialize portfolio risk reader (reads guardian's state from Redis)
+            self.portfolio_risk_reader = PortfolioRiskReader(
+                host=self.settings.redis_host,
+                port=self.settings.redis_port,
+                db=0,
+                password=self.settings.redis_password or "",
+            )
+            self.portfolio_risk_reader.connect()  # best-effort; fail-open
+
             # Initialize pre-trade checklist evaluator
             self.checklist_evaluator = ChecklistEvaluator(
                 redis_host=self.settings.redis_host,
@@ -232,8 +255,8 @@ class DecisionEngineService:
             )
             self.checklist_evaluator.connect()  # best-effort; degrades gracefully
 
-            # Initialize risk engine if available and enabled
-            if HAS_RISK_ENGINE and self._risk_enabled:
+            # Initialize risk engine (mandatory gate for BUY signals)
+            if self._risk_enabled:
                 try:
                     self.risk_adapter = RiskAdapter(
                         config_path=getattr(
@@ -245,18 +268,23 @@ class DecisionEngineService:
                     if self.risk_adapter.initialize():
                         logger.info("Risk engine initialized successfully")
                     else:
-                        logger.warning("Risk engine failed to initialize")
+                        logger.error(
+                            "Risk engine failed to initialize — "
+                            "all BUY signals will be BLOCKED until resolved"
+                        )
                         self.risk_adapter = None
                 except Exception as e:
-                    logger.warning(f"Risk engine initialization error: {e}")
+                    logger.error(
+                        f"Risk engine initialization error: {e} — "
+                        f"all BUY signals will be BLOCKED until resolved"
+                    )
                     self.risk_adapter = None
-            elif not HAS_RISK_ENGINE:
-                logger.warning(
-                    "RISK ENGINE NOT AVAILABLE — risk_engine package not installed. "
-                    "All BUY signals will bypass portfolio risk checks!"
-                )
             else:
-                logger.info("Risk engine disabled by configuration")
+                logger.warning(
+                    "Risk engine disabled by configuration — "
+                    "all BUY signals will be BLOCKED. "
+                    "Set RISK_ENGINE_ENABLED=true to enable."
+                )
 
             logger.info(f"Decision engine initialized with {len(self.rules)} rules")
             for rule in self.rules:
@@ -446,31 +474,73 @@ class DecisionEngineService:
                         )
                         should_publish = False
 
+                    # Portfolio risk gate: reads real-time state from
+                    # stop-loss-guardian's portfolio monitor (fail-open).
                     if (
-                        self.risk_adapter
+                        should_publish
+                        and self.portfolio_risk_reader
                         and aggregated_signal.signal_type == SignalType.BUY
                     ):
-                        try:
-                            risk_result = self.risk_adapter.check_risk(
-                                symbol=symbol,
-                                signal_type="BUY",
-                                confidence=aggregated_signal.aggregate_confidence,
-                                indicators=indicators,
+                        pf_state = self.portfolio_risk_reader.get_state()
+                        if pf_state is not None:
+                            max_stops = self._config.get(
+                                "portfolio_max_stops_per_day", 3
                             )
-                            if not risk_result.passes:
-                                logger.info(
-                                    f"Risk check rejected {symbol}: {risk_result.reason}"
+                            max_heat = self._config.get(
+                                "portfolio_max_actual_heat", 0.10
+                            )
+                            if pf_state.halted:
+                                logger.warning(
+                                    f"Portfolio gate: guardian halted — "
+                                    f"{pf_state.halt_reason}"
                                 )
                                 should_publish = False
-                        except Exception as risk_exc:
-                            # Fail-open: risk engine error should not silently kill signals.
-                            # Publish the signal without risk data — trader makes the call.
-                            logger.error(
-                                f"Risk check error for {symbol}: {risk_exc} — "
-                                f"publishing signal without risk assessment",
-                                exc_info=True,
+                            elif pf_state.stops_hit_today >= max_stops:
+                                logger.warning(
+                                    f"Portfolio gate: {pf_state.stops_hit_today} "
+                                    f"stops hit today (limit: {max_stops})"
+                                )
+                                should_publish = False
+                            elif pf_state.actual_portfolio_heat > max_heat:
+                                logger.warning(
+                                    f"Portfolio gate: actual heat "
+                                    f"{pf_state.actual_portfolio_heat:.1%} "
+                                    f"exceeds {max_heat:.0%} limit"
+                                )
+                                should_publish = False
+
+                    # Risk gate: MANDATORY for all BUY signals (fail-closed)
+                    if aggregated_signal.signal_type == SignalType.BUY:
+                        if not self.risk_adapter:
+                            logger.warning(
+                                f"Risk gate BLOCKED {symbol}: "
+                                f"risk engine not available — no BUY signals "
+                                f"permitted without risk assessment"
                             )
-                            risk_result = None
+                            should_publish = False
+                        else:
+                            try:
+                                risk_result = self.risk_adapter.check_risk(
+                                    symbol=symbol,
+                                    signal_type="BUY",
+                                    confidence=aggregated_signal.aggregate_confidence,
+                                    indicators=indicators,
+                                )
+                                if not risk_result.passes:
+                                    logger.info(
+                                        f"Risk check rejected {symbol}: "
+                                        f"{risk_result.reason}"
+                                    )
+                                    should_publish = False
+                            except Exception as risk_exc:
+                                # Fail-closed: risk engine errors BLOCK the signal.
+                                # Capital preservation > signal delivery.
+                                logger.error(
+                                    f"Risk check error for {symbol}: {risk_exc} — "
+                                    f"BLOCKING signal (fail-closed)",
+                                    exc_info=True,
+                                )
+                                should_publish = False
 
                     if should_publish:
                         self.producer.publish_decision(
@@ -681,6 +751,23 @@ class DecisionEngineService:
                         f"x{tier_confidence_multiplier:.2f} confidence "
                         f"{original:.3f} -> {aggregate_confidence:.3f}"
                     )
+
+        # Stage 4: Feedback accuracy multiplier (opt-in)
+        if self.feedback_reader and signal_type == SignalType.BUY:
+            rule_names = [s.rule_name for s in signals]
+            feedback_mult = self.feedback_reader.get_aggregate_multiplier(
+                rule_names, regime_id
+            )
+            if feedback_mult != 1.0:
+                original = aggregate_confidence
+                aggregate_confidence = min(
+                    aggregate_confidence * feedback_mult, 1.0
+                )
+                logger.info(
+                    f"Feedback multiplier: {symbol} rules={rule_names} "
+                    f"regime={regime_id} x{feedback_mult:.2f} confidence "
+                    f"{original:.3f} -> {aggregate_confidence:.3f}"
+                )
 
         # Pick primary reasoning from highest confidence signal
         primary_signal = max(signals, key=lambda s: s.confidence)
@@ -905,6 +992,10 @@ class DecisionEngineService:
             self.tier_reader.stop()
         if self.daily_loss_monitor:
             self.daily_loss_monitor.stop()
+        if self.portfolio_risk_reader:
+            self.portfolio_risk_reader.close()
+        if self.feedback_reader:
+            self.feedback_reader.stop()
         if self.market_context_reader:
             self.market_context_reader.stop()
         if self.checklist_evaluator:

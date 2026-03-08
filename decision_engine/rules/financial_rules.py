@@ -160,7 +160,7 @@ class FinancialMeanReversionRule(Rule):
         bb_pct = context.get_indicator("BB_PERCENT")
         adx = context.get_indicator("ADX_14")
         volume = context.get_indicator("volume")
-        avg_volume = context.get_indicator("volume_sma_20", volume)
+        avg_volume = context.get_indicator("volume_sma_20")
 
         # Check if this is a financial stock
         sub_sector = FINANCIAL_SECTOR_MAP.get(context.symbol.upper())

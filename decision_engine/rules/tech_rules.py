@@ -164,7 +164,7 @@ class TechEMAPullbackRule(Rule):
         sma200 = context.get_indicator("SMA_200")
         close = context.get_indicator("close")
         volume = context.get_indicator("volume")
-        avg_volume = context.get_indicator("volume_sma_20", volume)
+        avg_volume = context.get_indicator("volume_sma_20")
 
         # Must have stacked moving averages (confirmed uptrend)
         if not (ema21 > sma50 > sma200):

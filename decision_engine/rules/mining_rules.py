@@ -139,7 +139,7 @@ class CommodityBreakoutRule(Rule):
         sma50 = context.get_indicator("SMA_50")
         close = context.get_indicator("close")
         volume = context.get_indicator("volume")
-        avg_volume = context.get_indicator("volume_sma_20", volume)
+        avg_volume = context.get_indicator("volume_sma_20")
 
         # Check if this is a mining stock
         commodity = MINER_COMMODITY_MAP.get(context.symbol.upper())
@@ -183,8 +183,13 @@ class CommodityBreakoutRule(Rule):
                 reasoning=f"RSI {rsi:.1f} overbought - breakout may be exhausted"
             )
 
-        # Volume confirmation
+        # Volume confirmation — fail-closed on missing data
         volume_ratio = volume / avg_volume if avg_volume > 0 else 0.0
+        if volume_ratio < 0.5:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"Insufficient volume: {volume_ratio:.1f}x of average (need 0.5x minimum)"
+            )
 
         # Calculate confidence
         base_confidence = 0.55
@@ -656,7 +661,7 @@ class VolumeBreakoutRule(Rule):
         sma50 = context.get_indicator("SMA_50")
         close = context.get_indicator("close")
         volume = context.get_indicator("volume")
-        avg_volume = context.get_indicator("volume_sma_20", volume)
+        avg_volume = context.get_indicator("volume_sma_20")
 
         # Check if this is a mining stock
         commodity = MINER_COMMODITY_MAP.get(context.symbol.upper())

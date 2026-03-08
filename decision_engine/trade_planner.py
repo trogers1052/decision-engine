@@ -1,12 +1,13 @@
 """
 Trade Plan Engine — deterministic entry/stop/target/R:R calculation.
 
-Reads account balance from Redis (robinhood:portfolio → total_equity),
+Reads account balance from Redis (robinhood:buying_power → total_equity),
 falls back to settings.default_account_balance if Redis is unavailable.
 
 All math is deterministic. $0 LLM cost.
 """
 
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -96,7 +97,7 @@ class TradePlanEngine:
         stop_min_pct: float = 3.0,
         stop_max_pct: float = 15.0,
         default_account_balance: float = 888.80,
-        account_balance_redis_key: str = "robinhood:portfolio",
+        account_balance_redis_key: str = "robinhood:buying_power",
         symbol_exit_strategies: Optional[dict] = None,
         redis_host: str = "localhost",
         redis_port: int = 6379,
@@ -777,7 +778,15 @@ class TradePlanEngine:
                 # Apply tier-based size multiplier
                 if position_size_multiplier != 1.0 and shares > 0:
                     shares = max(1, int(shares * position_size_multiplier))
-                    dollar_risk = shares * (entry_price - stop_price)
+                    risk_per_share = entry_price - stop_price
+                    dollar_risk = shares * risk_per_share
+
+                    # Enforce 2% risk cap — tier multiplier must not breach it
+                    max_dollar_risk = account_balance * 0.02
+                    if dollar_risk > max_dollar_risk and risk_per_share > 0:
+                        shares = max(1, int(max_dollar_risk / risk_per_share))
+                        dollar_risk = shares * risk_per_share
+
                     risk_pct = (dollar_risk / account_balance) * 100 if account_balance > 0 else 0.0
                     position_value = shares * entry_price
                     warnings.append(
@@ -799,6 +808,9 @@ class TradePlanEngine:
         # Apply tier-based size multiplier
         if position_size_multiplier != 1.0 and shares > 0:
             shares = max(1, int(shares * position_size_multiplier))
+            # Enforce 2% risk cap — tier multiplier must not breach it
+            if shares * risk_per_share > max_dollar_risk:
+                shares = max(1, int(max_dollar_risk / risk_per_share))
             warnings.append(
                 f"Tier size adjustment: {position_size_multiplier:.0%}x "
                 f"→ {shares} shares"
@@ -848,7 +860,7 @@ class TradePlanEngine:
         return self.default_account_balance
 
     def _fetch_balance_from_redis(self) -> Optional[float]:
-        """Try to read total_equity from robinhood:portfolio in Redis."""
+        """Try to read total_equity from robinhood:buying_power in Redis."""
         if not _HAS_REDIS:
             return None
 
@@ -870,10 +882,11 @@ class TradePlanEngine:
                     kwargs["password"] = self._redis_password
                 self._redis_client = _redis_lib.Redis(**kwargs)
 
-            raw = self._redis_client.hget(self.account_balance_redis_key, "total_equity")
+            raw = self._redis_client.get(self.account_balance_redis_key)
             if raw is None:
                 return None
-            return float(raw)
+            data = json.loads(raw)
+            return float(data["total_equity"])
 
         except Exception as exc:
             logger.warning(f"Redis unavailable for balance fetch: {exc}")
@@ -908,7 +921,7 @@ class TradePlanEngine:
                 tpe_cfg.get("default_account_balance", 888.80)
             ),
             account_balance_redis_key=tpe_cfg.get(
-                "account_balance_redis_key", "robinhood:portfolio"
+                "account_balance_redis_key", "robinhood:buying_power"
             ),
             symbol_exit_strategies=symbol_exit_strategies or {},
             redis_host=redis_host,

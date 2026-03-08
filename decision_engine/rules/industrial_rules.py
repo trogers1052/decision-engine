@@ -1,20 +1,20 @@
 """
-Consumer Staples Sector Specific Rules
+Industrial Sector Specific Rules
 
-Specialized rules for trading consumer staples stocks based on
+Specialized rules for trading industrial stocks based on
 well-documented sector dynamics.
 
 Key Insights:
-1. Consumer staples are among the lowest-beta stocks (0.03-0.36 for household/beverages)
-2. Textbook mean-reverting: tight ranges, Bollinger Bands + ADX are primary entry tools
-3. RSI oversold thresholds must be HIGHER (40-42) — even higher than utilities
-4. ADX < 18 confirms mean-reverting regime (tighter than utilities' 20)
-5. SMA_200 is the absolute floor — same as utilities
-6. COST is a MOMENTUM stock (beta ~1.0) — exclude from mean-reversion rules
-7. Tighter profit targets (6-7%) match the available range for ultra-low-vol names
-8. Seasonality: Q1 strong, summer defensive rotation, Sep weak, Q4 holiday strength
-9. Rate sensitivity is moderate (less than utilities, but still a factor)
-10. Staples outperform in late-cycle and recession — current environment is favorable
+1. Industrials are cyclical — earnings track ISM/PMI and capex cycles
+2. Beta typically 0.9-1.3, higher than staples/utilities but lower than tech
+3. Mean-reversion works for diversified conglomerates (HON, MMM, ITW)
+4. Momentum/trend works for heavy equipment (CAT, DE) tied to capex cycles
+5. ADX < 22 confirms mean-reverting regime (between utilities' 20 and financials' 25)
+6. Seasonality: Q4/Q1 strong (capex budgets flush), summer weak (seasonal slowdown)
+7. Rate sensitivity is moderate — capex decisions lag rate changes by 6-12 months
+8. Backlog visibility gives industrials more predictable earnings than most cyclicals
+9. Book-to-bill ratio > 1.0 is bullish for equipment makers
+10. Infrastructure spending (IIJA) provides multi-year tailwind through 2030
 """
 
 from datetime import datetime
@@ -24,80 +24,81 @@ from .base import Rule, RuleResult, SignalType, SymbolContext
 
 
 # =============================================================================
-# Consumer Staples Sector Symbol Mapping
+# Industrial Sector Symbol Mapping
 # =============================================================================
 
-CONSUMER_STAPLES_SECTOR_MAP = {
-    # Beverages (ultra-defensive, Dividend Kings)
-    "KO": "beverages",       # Coca-Cola — beta 0.11-0.36, yield 2.6%, 62yr div streak
-    "PEP": "beverages",      # PepsiCo — similar profile to KO
+INDUSTRIAL_SECTOR_MAP = {
+    # Heavy equipment / Ag & Construction (cyclical, capex-driven)
+    "CAT": "heavy_equipment",   # Caterpillar — beta 1.0, construction/mining capex
+    "DE": "heavy_equipment",    # Deere — beta 1.0, ag + construction capex
+    "PCAR": "heavy_equipment",  # PACCAR — beta 0.9, truck manufacturing
 
-    # Household products (ultra-low beta, textbook mean-reversion)
-    "PG": "household",       # Procter & Gamble — beta 0.15, consumer staple bellwether
-    "CL": "household",       # Colgate-Palmolive — beta 0.03-0.30, negative skew
-    "CHD": "household",      # Church & Dwight — beta 0.02-0.47, Arm & Hammer
-    "KMB": "household",      # Kimberly-Clark — beta 0.08-0.31, yield ~5%, Dividend King
+    # Diversified conglomerate (lower beta, mean-reverting)
+    "HON": "conglomerate",      # Honeywell — beta 1.0, aerospace/automation/materials
+    "MMM": "conglomerate",      # 3M — beta 1.0, diversified industrial (litigation risk)
+    "ITW": "conglomerate",      # Illinois Tool Works — beta 1.0, 80/20 model, premium margins
 
-    # Mass retail (higher beta, hybrid defensive/growth)
-    "WMT": "mass_retail",    # Walmart — beta 0.26-0.66, e-commerce growth
-    "TGT": "mass_retail",    # Target — if added later
+    # Electrical / Power management (infrastructure + data center tailwind)
+    "ETN": "electrical",        # Eaton — beta 1.1, power management, data center exposure
+    "EMR": "electrical",        # Emerson Electric — beta 1.1, automation/climate tech
+    "ROK": "electrical",        # Rockwell Automation — beta 1.2, factory automation
 
-    # Warehouse/growth retail (MOMENTUM — exclude from mean-reversion)
-    "COST": "retail_growth", # Costco — beta ~1.0, P/E ~50, membership model
+    # Aerospace industrial (defense-adjacent, long-cycle)
+    "GE": "aerospace",          # GE Aerospace — beta 1.2, jet engines, aftermarket
+    "TXT": "aerospace",         # Textron — beta 1.1, aviation/defense/industrial
 
     # Sector ETFs
-    "XLP": "staples_etf",    # Consumer Staples Select Sector SPDR
-    "VDC": "staples_etf",    # Vanguard Consumer Staples ETF
+    "XLI": "industrial_etf",    # Industrial Select Sector SPDR
 }
 
 # RSI oversold thresholds by sub-sector
-STAPLES_RSI_OVERSOLD = {
-    "beverages": 40,          # Ultra-low beta, RSI rarely dips below 38
-    "household": 40,          # Ultra-low beta, similar to beverages
-    "mass_retail": 36,        # Higher beta allows deeper RSI dips
-    "retail_growth": 30,      # Standard thresholds (high beta, like tech)
-    "staples_etf": 37,        # Diversified, dampened volatility
+INDUSTRIAL_RSI_OVERSOLD = {
+    "heavy_equipment": 33,       # Higher beta, deeper RSI dips than staples
+    "conglomerate": 36,          # Moderate beta, mean-reverts reliably
+    "electrical": 34,            # Moderate-high beta, infrastructure demand floor
+    "aerospace": 33,             # Higher beta, long-cycle backlog support
+    "industrial_etf": 35,        # Diversified, dampened volatility
 }
 
-# Seasonal strength months
-STAPLES_SEASONAL_STRENGTH = {
-    "beverages": [1, 2, 3, 6, 7, 8],         # Q1 + summer (beverage demand)
-    "household": [1, 2, 3, 10, 11, 12],       # Q1 + Q4 (holiday consumer spending)
-    "mass_retail": [1, 2, 10, 11, 12],        # Holiday quarter dominant
-    "retail_growth": [10, 11, 12, 1],          # Holiday + membership renewals
-    "staples_etf": [1, 2, 3, 6, 7, 8],        # Q1 + defensive rotation summer
+# Seasonal strength months (capex budget cycles)
+INDUSTRIAL_SEASONAL_STRENGTH = {
+    "heavy_equipment": [1, 2, 3, 10, 11, 12],   # Q1 capex deployment + Q4 budget flush
+    "conglomerate": [1, 2, 11, 12],              # Q1 orders + Q4 budget flush
+    "electrical": [1, 2, 3, 10, 11, 12],         # Infrastructure spending front-loaded
+    "aerospace": [1, 2, 3, 11, 12],              # Defense budget cycle + airline orders
+    "industrial_etf": [1, 2, 3, 10, 11, 12],     # Broad capex cycle
 }
 
 # Seasonal weakness months
-STAPLES_SEASONAL_WEAKNESS = {
-    "beverages": [9],                          # Sep rotation out
-    "household": [5, 6, 9],                    # Sell in May + Sep
-    "mass_retail": [5, 6, 9],                  # Sell in May + Sep
-    "retail_growth": [5, 6, 9],                # Follows tech seasonal weakness
-    "staples_etf": [9],                        # Sep weakness
+INDUSTRIAL_SEASONAL_WEAKNESS = {
+    "heavy_equipment": [6, 7, 8, 9],             # Summer slowdown, ag harvest uncertainty
+    "conglomerate": [6, 7, 9],                    # Summer doldrums
+    "electrical": [7, 8, 9],                      # Project delays in summer
+    "aerospace": [7, 8, 9],                       # Airline seasonality noise
+    "industrial_etf": [6, 7, 8, 9],              # Broad summer weakness
 }
 
 
-class ConsumerStaplesMeanReversionRule(Rule):
+class IndustrialMeanReversionRule(Rule):
     """
-    Buy consumer staples stocks when oversold at Bollinger Band support
+    Buy industrial stocks when oversold at Bollinger Band support
     in a mean-reverting environment.
 
-    Consumer staples are the lowest-beta stocks in the market. The
-    mean-reversion signal is extremely reliable because:
-    - Demand for essentials is inelastic
-    - High dividend yields create natural price floors
-    - Institutional rebalancing forces mean-reversion
+    Industrials mean-revert because:
+    - Diversified revenue streams dampen single-segment shocks
+    - Long backlogs provide earnings visibility (ITW, HON)
+    - Institutional rebalancing forces sector mean-reversion
+    - Infrastructure spending provides multi-year demand floor
 
-    Key differences from utility mean reversion:
-    - Even higher RSI thresholds (40-42 vs 38 for utilities)
-    - Tighter ADX threshold (18 vs 20) — staples are even lower-trend
-    - Excludes retail_growth (COST) — use momentum rules instead
+    Key differences from other sectors:
+    - ADX threshold 22 (between staples' 18 and financials' 25)
+    - RSI thresholds 33-36 (deeper dips than staples/utilities)
+    - Excludes heavy_equipment in trending markets (use momentum)
 
     Detection:
     - BB_PERCENT < 0.15 (near or below lower Bollinger Band)
     - RSI_14 in sub-sector-specific oversold range
-    - ADX_14 < 18 (confirms mean-reverting, not trending)
+    - ADX_14 < 22 (confirms mean-reverting, not trending)
     - Price >= SMA_200 (long-term support intact)
     - Volume >= 50% of average (not dead drift)
     """
@@ -105,9 +106,9 @@ class ConsumerStaplesMeanReversionRule(Rule):
     def __init__(
         self,
         bb_oversold: float = 0.15,
-        rsi_floor: float = 25.0,
-        rsi_ceiling: float = 45.0,
-        adx_max: float = 18.0,
+        rsi_floor: float = 22.0,
+        rsi_ceiling: float = 42.0,
+        adx_max: float = 22.0,
     ):
         self.bb_oversold = bb_oversold
         self.rsi_floor = rsi_floor
@@ -116,12 +117,12 @@ class ConsumerStaplesMeanReversionRule(Rule):
 
     @property
     def name(self) -> str:
-        return "Consumer Staples Mean Reversion"
+        return "Industrial Mean Reversion"
 
     @property
     def description(self) -> str:
         return (
-            f"Buy consumer staples when BB%<{self.bb_oversold}, "
+            f"Buy industrials when BB%<{self.bb_oversold}, "
             f"RSI {self.rsi_floor}-{self.rsi_ceiling}, ADX<{self.adx_max}"
         )
 
@@ -144,18 +145,11 @@ class ConsumerStaplesMeanReversionRule(Rule):
         avg_volume = context.get_indicator("volume_sma_20")
         stoch_k = context.get_indicator("Stochastic_K")
 
-        sub_sector = CONSUMER_STAPLES_SECTOR_MAP.get(context.symbol.upper())
+        sub_sector = INDUSTRIAL_SECTOR_MAP.get(context.symbol.upper())
         if not sub_sector:
             return RuleResult(
                 triggered=False,
-                reasoning=f"{context.symbol} not in consumer staples sector list"
-            )
-
-        # Retail growth (COST) should use momentum rules, not mean reversion
-        if sub_sector == "retail_growth":
-            return RuleResult(
-                triggered=False,
-                reasoning=f"{context.symbol} is retail_growth — use momentum rules"
+                reasoning=f"{context.symbol} not in industrial sector list"
             )
 
         # SMA_200 is the absolute floor
@@ -187,7 +181,7 @@ class ConsumerStaplesMeanReversionRule(Rule):
             )
 
         # Sub-sector-specific RSI threshold
-        rsi_oversold = STAPLES_RSI_OVERSOLD.get(sub_sector, 40)
+        rsi_oversold = INDUSTRIAL_RSI_OVERSOLD.get(sub_sector, 35)
         effective_ceiling = min(self.rsi_ceiling, rsi_oversold + 7)
 
         if rsi < self.rsi_floor:
@@ -210,7 +204,7 @@ class ConsumerStaplesMeanReversionRule(Rule):
             )
 
         # Calculate confidence
-        base_confidence = 0.60
+        base_confidence = 0.58
 
         # BB extreme oversold boost
         if bb_pct < 0.0:
@@ -227,7 +221,7 @@ class ConsumerStaplesMeanReversionRule(Rule):
             base_confidence += 0.05
 
         # ADX very low = strong mean-reversion
-        if adx < 12:
+        if adx < 15:
             base_confidence += 0.05
 
         # SMA_20 > SMA_50 = shorter-term trend intact
@@ -244,8 +238,8 @@ class ConsumerStaplesMeanReversionRule(Rule):
 
         # Seasonal adjustment
         current_month = context.timestamp.month
-        strong_months = STAPLES_SEASONAL_STRENGTH.get(sub_sector, [])
-        weak_months = STAPLES_SEASONAL_WEAKNESS.get(sub_sector, [])
+        strong_months = INDUSTRIAL_SEASONAL_STRENGTH.get(sub_sector, [])
+        weak_months = INDUSTRIAL_SEASONAL_WEAKNESS.get(sub_sector, [])
 
         if current_month in strong_months:
             base_confidence += 0.05
@@ -259,7 +253,7 @@ class ConsumerStaplesMeanReversionRule(Rule):
             signal=SignalType.BUY,
             confidence=confidence,
             reasoning=(
-                f"STAPLES MEAN REVERSION: {context.symbol} ({sub_sector}) oversold at "
+                f"INDUSTRIAL MEAN REVERSION: {context.symbol} ({sub_sector}) oversold at "
                 f"BB support (BB%={bb_pct:.2f}, RSI={rsi:.1f}). "
                 f"ADX={adx:.1f} confirms mean-reverting. "
                 f"Golden cross intact (SMA_50 > SMA_200)."
@@ -276,20 +270,19 @@ class ConsumerStaplesMeanReversionRule(Rule):
         )
 
 
-class ConsumerStaplesPullbackRule(Rule):
+class IndustrialPullbackRule(Rule):
     """
-    Buy consumer staples on pullback to SMA_50 support with momentum
+    Buy industrial stocks on pullback to SMA_50 support with momentum
     confirmation.
 
-    Uses SMA_50 (not EMA_21) because staples price action is
-    structurally slow — fast moving averages generate noise.
-
-    Excludes retail_growth (COST).
+    Industrials pull back to SMA_50 during normal capex cycle fluctuations.
+    The SMA_50 acts as dynamic support because institutional buyers
+    accumulate on dips to this level.
     """
 
     def __init__(
         self,
-        pullback_tolerance_pct: float = 2.0,
+        pullback_tolerance_pct: float = 2.5,
         rsi_max: float = 45.0,
     ):
         self.pullback_tolerance_pct = pullback_tolerance_pct
@@ -297,12 +290,12 @@ class ConsumerStaplesPullbackRule(Rule):
 
     @property
     def name(self) -> str:
-        return "Consumer Staples Pullback"
+        return "Industrial Pullback"
 
     @property
     def description(self) -> str:
         return (
-            f"Buy consumer staples pullbacks to SMA_50 (within {self.pullback_tolerance_pct}%) "
+            f"Buy industrial pullbacks to SMA_50 (within {self.pullback_tolerance_pct}%) "
             f"with momentum confirmation"
         )
 
@@ -323,17 +316,11 @@ class ConsumerStaplesPullbackRule(Rule):
         adx = context.get_indicator("ADX_14")
         bb_pct = context.get_indicator("BB_PERCENT")
 
-        sub_sector = CONSUMER_STAPLES_SECTOR_MAP.get(context.symbol.upper())
+        sub_sector = INDUSTRIAL_SECTOR_MAP.get(context.symbol.upper())
         if not sub_sector:
             return RuleResult(
                 triggered=False,
-                reasoning=f"{context.symbol} not in consumer staples sector list"
-            )
-
-        if sub_sector == "retail_growth":
-            return RuleResult(
-                triggered=False,
-                reasoning=f"{context.symbol} is retail_growth — use momentum rules"
+                reasoning=f"{context.symbol} not in industrial sector list"
             )
 
         # Golden cross required
@@ -354,7 +341,7 @@ class ConsumerStaplesPullbackRule(Rule):
                 triggered=False,
                 reasoning=f"Price {distance_pct:.1f}% above SMA_50 — not a pullback"
             )
-        if distance_pct < -3.0:
+        if distance_pct < -4.0:
             return RuleResult(
                 triggered=False,
                 reasoning=f"Price {distance_pct:.1f}% below SMA_50 — broken support"
@@ -368,7 +355,7 @@ class ConsumerStaplesPullbackRule(Rule):
             )
 
         # MACD histogram should be improving
-        if macd_hist < -0.3:
+        if macd_hist < -0.5:
             return RuleResult(
                 triggered=False,
                 reasoning=f"MACD histogram {macd_hist:.3f} still declining"
@@ -378,13 +365,13 @@ class ConsumerStaplesPullbackRule(Rule):
         base_confidence = 0.55
 
         # Closer to SMA_50 = better support test
-        if abs(distance_pct) < 0.8:
+        if abs(distance_pct) < 1.0:
             base_confidence += 0.10
-        elif abs(distance_pct) < 1.5:
+        elif abs(distance_pct) < 2.0:
             base_confidence += 0.05
 
         # RSI depth
-        rsi_oversold = STAPLES_RSI_OVERSOLD.get(sub_sector, 40)
+        rsi_oversold = INDUSTRIAL_RSI_OVERSOLD.get(sub_sector, 35)
         if rsi < rsi_oversold:
             base_confidence += 0.10
         elif rsi < rsi_oversold + 5:
@@ -398,8 +385,8 @@ class ConsumerStaplesPullbackRule(Rule):
         if bb_pct is not None and bb_pct < 0.30:
             base_confidence += 0.05
 
-        # ADX low = mean-reverting
-        if adx is not None and adx < 18:
+        # ADX moderate = not trending hard against us
+        if adx is not None and adx < 22:
             base_confidence += 0.05
 
         # SMA_20 > SMA_50 still intact
@@ -408,8 +395,8 @@ class ConsumerStaplesPullbackRule(Rule):
 
         # Seasonal adjustment
         current_month = context.timestamp.month
-        strong_months = STAPLES_SEASONAL_STRENGTH.get(sub_sector, [])
-        weak_months = STAPLES_SEASONAL_WEAKNESS.get(sub_sector, [])
+        strong_months = INDUSTRIAL_SEASONAL_STRENGTH.get(sub_sector, [])
+        weak_months = INDUSTRIAL_SEASONAL_WEAKNESS.get(sub_sector, [])
 
         if current_month in strong_months:
             base_confidence += 0.05
@@ -423,7 +410,7 @@ class ConsumerStaplesPullbackRule(Rule):
             signal=SignalType.BUY,
             confidence=confidence,
             reasoning=(
-                f"STAPLES PULLBACK: {context.symbol} ({sub_sector}) at SMA_50 support "
+                f"INDUSTRIAL PULLBACK: {context.symbol} ({sub_sector}) at SMA_50 support "
                 f"({distance_pct:+.1f}% from SMA_50). RSI={rsi:.1f}, "
                 f"MACD_H={macd_hist:.3f}. Golden cross intact."
             ),
@@ -437,17 +424,17 @@ class ConsumerStaplesPullbackRule(Rule):
         )
 
 
-class ConsumerStaplesSeasonalityRule(Rule):
+class IndustrialSeasonalityRule(Rule):
     """
-    Adjust confidence for consumer staples seasonal patterns.
+    Adjust confidence for industrial seasonal patterns.
 
-    Staples seasonality:
-    - Beverages: Q1 + summer (demand peak) strong, Sep weak
-    - Household: Q1 + Q4 (holiday spending) strong, May/Jun/Sep weak
-    - Mass retail: holiday quarter dominant, sell-in-May pattern
-    - ETFs: Q1 + defensive rotation summer, Sep weak
+    Industrial seasonality is driven by capital expenditure cycles:
+    - Q4/Q1: Budget flush (Oct-Dec) + new year capex deployment (Jan-Mar)
+    - Summer: Seasonal slowdown, project delays, vacation-driven decision lag
+    - Sep: Universally weak across all sub-sectors
 
-    Requires base uptrend (SMA_20 > SMA_50). Blocks new entries in weak months.
+    Heavy equipment has additional ag harvest uncertainty in summer.
+    Aerospace follows airline order cycles (Jan-Mar ordering season).
     """
 
     def __init__(
@@ -460,11 +447,11 @@ class ConsumerStaplesSeasonalityRule(Rule):
 
     @property
     def name(self) -> str:
-        return "Consumer Staples Seasonality"
+        return "Industrial Seasonality"
 
     @property
     def description(self) -> str:
-        return "Adjust confidence for consumer staples seasonal patterns"
+        return "Adjust confidence for industrial seasonal patterns (Q4/Q1 strong, summer weak)"
 
     @property
     def required_indicators(self) -> list:
@@ -476,24 +463,24 @@ class ConsumerStaplesSeasonalityRule(Rule):
         sma50 = context.get_indicator("SMA_50")
         close = context.get_indicator("close")
 
-        sub_sector = CONSUMER_STAPLES_SECTOR_MAP.get(context.symbol.upper())
+        sub_sector = INDUSTRIAL_SECTOR_MAP.get(context.symbol.upper())
         if not sub_sector:
             return RuleResult(
                 triggered=False,
-                reasoning=f"{context.symbol} not in consumer staples sector list"
+                reasoning=f"{context.symbol} not in industrial sector list"
             )
 
         current_month = context.timestamp.month
 
-        strong_months = STAPLES_SEASONAL_STRENGTH.get(sub_sector, [])
-        weak_months = STAPLES_SEASONAL_WEAKNESS.get(sub_sector, [])
+        strong_months = INDUSTRIAL_SEASONAL_STRENGTH.get(sub_sector, [])
+        weak_months = INDUSTRIAL_SEASONAL_WEAKNESS.get(sub_sector, [])
 
         is_strong_month = current_month in strong_months
         is_weak_month = current_month in weak_months
 
         # Base signal check
         uptrend = sma20 > sma50
-        reasonable_rsi = 25 <= rsi <= 65
+        reasonable_rsi = 22 <= rsi <= 65
 
         if not uptrend:
             return RuleResult(
@@ -502,7 +489,7 @@ class ConsumerStaplesSeasonalityRule(Rule):
             )
 
         if not reasonable_rsi:
-            if rsi < 25:
+            if rsi < 22:
                 reason = f"RSI {rsi:.1f} deeply oversold — use mean reversion rule"
             else:
                 reason = f"RSI {rsi:.1f} overbought"
@@ -537,11 +524,11 @@ class ConsumerStaplesSeasonalityRule(Rule):
 
         # Trend strength bonus
         trend_spread = (sma20 - sma50) / sma50 * 100 if sma50 > 0 else 0
-        if trend_spread > 1.5:
+        if trend_spread > 2.0:
             base_confidence += 0.05
 
         # RSI in comfortable range
-        rsi_oversold = STAPLES_RSI_OVERSOLD.get(sub_sector, 40)
+        rsi_oversold = INDUSTRIAL_RSI_OVERSOLD.get(sub_sector, 35)
         if rsi < rsi_oversold + 5:
             base_confidence += 0.05
 
@@ -552,7 +539,7 @@ class ConsumerStaplesSeasonalityRule(Rule):
             signal=SignalType.BUY,
             confidence=confidence,
             reasoning=(
-                f"STAPLES SEASONALITY: {context.symbol} ({sub_sector}) — "
+                f"INDUSTRIAL SEASONALITY: {context.symbol} ({sub_sector}) — "
                 f"{seasonal_status} month. {note}. RSI: {rsi:.1f}, "
                 f"Trend: +{trend_spread:.1f}%"
             ),

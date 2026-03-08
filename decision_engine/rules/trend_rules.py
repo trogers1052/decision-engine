@@ -144,7 +144,7 @@ class FullTrendAlignmentRule(Rule):
         sma200 = context.get_indicator("SMA_200")
         close = context.get_indicator("close")
         volume = context.get_indicator("volume")
-        avg_volume = context.get_indicator("volume_sma_20", volume)
+        avg_volume = context.get_indicator("volume_sma_20")
 
         if not (sma20 > sma50 > sma200):
             # Not fully aligned
@@ -166,8 +166,13 @@ class FullTrendAlignmentRule(Rule):
         # More spread = stronger trend = higher confidence
         confidence = min(0.6 + total_spread / 30, 0.95)
 
-        # Volume confirmation — penalize low volume entries
+        # Volume confirmation — fail-closed on missing data
         volume_ratio = volume / avg_volume if avg_volume > 0 else 0.0
+        if volume_ratio < 0.5:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"Insufficient volume: {volume_ratio:.1f}x of average (need 0.5x minimum)"
+            )
         if volume_ratio < 0.8:
             confidence = max(confidence - 0.10, 0.50)
 

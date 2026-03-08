@@ -140,7 +140,7 @@ class EnergyMomentumRule(Rule):
         ema9 = context.get_indicator("EMA_9")
         ema21 = context.get_indicator("EMA_21")
         volume = context.get_indicator("volume")
-        avg_volume = context.get_indicator("volume_sma_20", volume)
+        avg_volume = context.get_indicator("volume_sma_20")
 
         # Check if this is an energy stock
         sub_sector = ENERGY_SECTOR_MAP.get(context.symbol.upper())
@@ -344,7 +344,7 @@ class EnergyMeanReversionRule(Rule):
         adx = context.get_indicator("ADX_14")
         macd_hist = context.get_indicator("MACD_HIST")
         volume = context.get_indicator("volume")
-        avg_volume = context.get_indicator("volume_sma_20", volume)
+        avg_volume = context.get_indicator("volume_sma_20")
 
         # Check if this is an energy stock
         sub_sector = ENERGY_SECTOR_MAP.get(context.symbol.upper())
@@ -419,8 +419,13 @@ class EnergyMeanReversionRule(Rule):
                 )
             )
 
-        # Volume check (not dead)
+        # Volume check — fail-closed on missing data
         volume_ratio = volume / avg_volume if avg_volume > 0 else 0.0
+        if volume_ratio < 0.5:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"Insufficient volume: {volume_ratio:.1f}x of average (need 0.5x minimum)"
+            )
 
         # Calculate confidence
         base_confidence = 0.55
@@ -695,7 +700,7 @@ class MidstreamYieldReversionRule(Rule):
         bb_pct = context.get_indicator("BB_PERCENT")
         adx = context.get_indicator("ADX_14")
         volume = context.get_indicator("volume")
-        avg_volume = context.get_indicator("volume_sma_20", volume)
+        avg_volume = context.get_indicator("volume_sma_20")
 
         # Check if this is an energy stock (works best for midstream but not exclusive)
         sub_sector = ENERGY_SECTOR_MAP.get(context.symbol.upper())
@@ -755,8 +760,13 @@ class MidstreamYieldReversionRule(Rule):
                 reasoning=f"Price {dist_to_sma20:.1f}% from SMA_20 — not stabilized yet"
             )
 
-        # Volume check
+        # Volume check — fail-closed on missing data
         volume_ratio = volume / avg_volume if avg_volume > 0 else 0.0
+        if volume_ratio < 0.5:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"Insufficient volume: {volume_ratio:.1f}x of average (need 0.5x minimum)"
+            )
 
         # Calculate confidence
         base_confidence = 0.55

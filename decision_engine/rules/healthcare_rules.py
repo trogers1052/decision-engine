@@ -1,20 +1,20 @@
 """
-Consumer Staples Sector Specific Rules
+Healthcare Sector Specific Rules
 
-Specialized rules for trading consumer staples stocks based on
+Specialized rules for trading healthcare stocks based on
 well-documented sector dynamics.
 
 Key Insights:
-1. Consumer staples are among the lowest-beta stocks (0.03-0.36 for household/beverages)
-2. Textbook mean-reverting: tight ranges, Bollinger Bands + ADX are primary entry tools
-3. RSI oversold thresholds must be HIGHER (40-42) — even higher than utilities
-4. ADX < 18 confirms mean-reverting regime (tighter than utilities' 20)
-5. SMA_200 is the absolute floor — same as utilities
-6. COST is a MOMENTUM stock (beta ~1.0) — exclude from mean-reversion rules
-7. Tighter profit targets (6-7%) match the available range for ultra-low-vol names
-8. Seasonality: Q1 strong, summer defensive rotation, Sep weak, Q4 holiday strength
-9. Rate sensitivity is moderate (less than utilities, but still a factor)
-10. Staples outperform in late-cycle and recession — current environment is favorable
+1. Healthcare spans 5+ sub-sectors with dramatically different profiles
+2. Large-cap pharma (ABBV) and diversified (JNJ) are textbook mean-reverters (beta 0.14-0.36)
+3. Managed care (UNH) mean-reverts BUT with rare violent policy/regulatory gaps
+4. Large-cap biotech (VRTX) is unusually low-beta for biotech — hybrid approach
+5. Medical devices (SYK) and med-tech growth (TMDX) are momentum/growth — exclude from mean-reversion
+6. Clinical-stage biotech (RXRX, VKTX) have BINARY trial risk — EXCLUDE from ALL rules
+7. Seasonality: Nov-Dec strongest (75% win rate), Sep weakest (-1.2%, 42% win rate)
+8. Q1 pharma weakness from insurance deductible resets
+9. Hospital budget cycle creates Q4 device spending boost
+10. ADX < 20 for mean-reversion confirmation (pharma/JNJ behave like utilities)
 """
 
 from datetime import datetime
@@ -24,80 +24,95 @@ from .base import Rule, RuleResult, SignalType, SymbolContext
 
 
 # =============================================================================
-# Consumer Staples Sector Symbol Mapping
+# Healthcare Sector Symbol Mapping
 # =============================================================================
 
-CONSUMER_STAPLES_SECTOR_MAP = {
-    # Beverages (ultra-defensive, Dividend Kings)
-    "KO": "beverages",       # Coca-Cola — beta 0.11-0.36, yield 2.6%, 62yr div streak
-    "PEP": "beverages",      # PepsiCo — similar profile to KO
+HEALTHCARE_SECTOR_MAP = {
+    # Large-cap pharma (low beta, dividend, mean-reverting)
+    "ABBV": "pharma",          # AbbVie — beta 0.32-0.36, yield ~3%, 12yr div growth
+    "LLY": "pharma",           # Eli Lilly — if added later
+    "MRK": "pharma",           # Merck — if added later
+    "PFE": "pharma",           # Pfizer — if added later
 
-    # Household products (ultra-low beta, textbook mean-reversion)
-    "PG": "household",       # Procter & Gamble — beta 0.15, consumer staple bellwether
-    "CL": "household",       # Colgate-Palmolive — beta 0.03-0.30, negative skew
-    "CHD": "household",      # Church & Dwight — beta 0.02-0.47, Arm & Hammer
-    "KMB": "household",      # Kimberly-Clark — beta 0.08-0.31, yield ~5%, Dividend King
+    # Diversified healthcare (ultra-low beta, Dividend King)
+    "JNJ": "diversified",      # Johnson & Johnson — beta 0.14-0.35, 54yr div streak
 
-    # Mass retail (higher beta, hybrid defensive/growth)
-    "WMT": "mass_retail",    # Walmart — beta 0.26-0.66, e-commerce growth
-    "TGT": "mass_retail",    # Target — if added later
+    # Managed care / insurance (low beta BUT political gap risk)
+    "UNH": "managed_care",     # UnitedHealth — beta 0.42, can gap 10-15% on policy news
 
-    # Warehouse/growth retail (MOMENTUM — exclude from mean-reversion)
-    "COST": "retail_growth", # Costco — beta ~1.0, P/E ~50, membership model
+    # Large-cap biotech (unusually low beta for biotech, recurring revenue)
+    "VRTX": "large_biotech",   # Vertex Pharma — beta 0.23-0.49, $12B CF revenue
+
+    # Medical devices / growth (momentum stocks, NOT mean-reverting)
+    "SYK": "med_devices",      # Stryker — beta 0.69-0.87, growth compounder
+    "TMDX": "med_growth",      # TransMedics — beta 1.1-2.05, high-growth organ transplant
+
+    # Clinical-stage biotech (BINARY RISK — EXCLUDE from all rules)
+    "RXRX": "clinical_biotech",  # Recursion — beta 3.21, pre-revenue, AI drug discovery
+    "VKTX": "clinical_biotech",  # Viking Therapeutics — Phase 3 obesity trials, 50-70% gap risk
 
     # Sector ETFs
-    "XLP": "staples_etf",    # Consumer Staples Select Sector SPDR
-    "VDC": "staples_etf",    # Vanguard Consumer Staples ETF
+    "XLV": "healthcare_etf",   # Health Care Select Sector SPDR
+    "XBI": "healthcare_etf",   # SPDR S&P Biotech ETF — if added later
 }
 
 # RSI oversold thresholds by sub-sector
-STAPLES_RSI_OVERSOLD = {
-    "beverages": 40,          # Ultra-low beta, RSI rarely dips below 38
-    "household": 40,          # Ultra-low beta, similar to beverages
-    "mass_retail": 36,        # Higher beta allows deeper RSI dips
-    "retail_growth": 30,      # Standard thresholds (high beta, like tech)
-    "staples_etf": 37,        # Diversified, dampened volatility
+HEALTHCARE_RSI_OVERSOLD = {
+    "pharma": 38,              # Low beta, rarely dips below 35
+    "diversified": 40,         # Ultra-low beta, like consumer staples (PG/KMB)
+    "managed_care": 30,        # Standard — UNH has enough beta to reach true oversold
+    "large_biotech": 35,       # Lower than pharma (growth biotech can dip harder)
+    "med_devices": 30,         # Standard (near-market beta, momentum stock)
+    "med_growth": 28,          # High-vol growth, can sustain lower RSI
+    "clinical_biotech": 25,    # N/A — excluded from rules, but included for completeness
+    "healthcare_etf": 37,      # ETF dampening prevents extreme readings
 }
 
-# Seasonal strength months
-STAPLES_SEASONAL_STRENGTH = {
-    "beverages": [1, 2, 3, 6, 7, 8],         # Q1 + summer (beverage demand)
-    "household": [1, 2, 3, 10, 11, 12],       # Q1 + Q4 (holiday consumer spending)
-    "mass_retail": [1, 2, 10, 11, 12],        # Holiday quarter dominant
-    "retail_growth": [10, 11, 12, 1],          # Holiday + membership renewals
-    "staples_etf": [1, 2, 3, 6, 7, 8],        # Q1 + defensive rotation summer
+# Seasonal strength months (based on 25yr XLV data)
+HEALTHCARE_SEASONAL_STRENGTH = {
+    "pharma": [3, 4, 5, 7, 10, 11, 12],        # Mar-May + Jul + Q4 strong
+    "diversified": [1, 3, 4, 5, 7, 10, 11, 12], # Broad strength, defensive rotation
+    "managed_care": [4, 5, 7, 10, 11, 12],      # Q4 strong; Q1 weak (deductible reset)
+    "large_biotech": [1, 5, 7, 10, 11, 12],     # JPM conference Jan, Nov-Dec strongest
+    "med_devices": [4, 7, 10, 11, 12],           # Q4 hospital budget deployment
+    "med_growth": [4, 7, 10, 11, 12],            # Follows device seasonality
+    "clinical_biotech": [],                       # No meaningful seasonality
+    "healthcare_etf": [1, 3, 4, 5, 7, 10, 11, 12],  # Broad sector pattern
 }
 
 # Seasonal weakness months
-STAPLES_SEASONAL_WEAKNESS = {
-    "beverages": [9],                          # Sep rotation out
-    "household": [5, 6, 9],                    # Sell in May + Sep
-    "mass_retail": [5, 6, 9],                  # Sell in May + Sep
-    "retail_growth": [5, 6, 9],                # Follows tech seasonal weakness
-    "staples_etf": [9],                        # Sep weakness
+HEALTHCARE_SEASONAL_WEAKNESS = {
+    "pharma": [2, 8, 9],                         # Feb (Q1 Rx reset), Aug-Sep
+    "diversified": [8, 9],                        # Aug-Sep rotation
+    "managed_care": [1, 2, 9],                    # Q1 deductible reset + Sep
+    "large_biotech": [8, 9],                      # Summer lull
+    "med_devices": [2, 8, 9],                     # Feb + Aug-Sep
+    "med_growth": [2, 8, 9],                      # Follows broader pattern
+    "clinical_biotech": [9],                       # Sep universal weakness
+    "healthcare_etf": [2, 8, 9],                  # Broad sector pattern
 }
 
 
-class ConsumerStaplesMeanReversionRule(Rule):
+class HealthcareMeanReversionRule(Rule):
     """
-    Buy consumer staples stocks when oversold at Bollinger Band support
+    Buy healthcare stocks when oversold at Bollinger Band support
     in a mean-reverting environment.
 
-    Consumer staples are the lowest-beta stocks in the market. The
-    mean-reversion signal is extremely reliable because:
-    - Demand for essentials is inelastic
-    - High dividend yields create natural price floors
-    - Institutional rebalancing forces mean-reversion
+    Applies to: pharma (ABBV), diversified (JNJ), managed_care (UNH),
+                large_biotech (VRTX), healthcare_etf (XLV)
 
-    Key differences from utility mean reversion:
-    - Even higher RSI thresholds (40-42 vs 38 for utilities)
-    - Tighter ADX threshold (18 vs 20) — staples are even lower-trend
-    - Excludes retail_growth (COST) — use momentum rules instead
+    Excludes: med_devices (SYK), med_growth (TMDX) — use momentum rules
+    Excludes: clinical_biotech (RXRX, VKTX) — binary trial risk
+
+    Key differences from consumer staples mean reversion:
+    - UNH gets wider RSI range (standard 30 vs raised thresholds)
+    - VRTX treated as low-beta biotech (RSI 35, slightly wider)
+    - ADX < 20 (same as utilities, looser than staples' 18)
 
     Detection:
     - BB_PERCENT < 0.15 (near or below lower Bollinger Band)
     - RSI_14 in sub-sector-specific oversold range
-    - ADX_14 < 18 (confirms mean-reverting, not trending)
+    - ADX_14 < 20 (confirms mean-reverting, not trending)
     - Price >= SMA_200 (long-term support intact)
     - Volume >= 50% of average (not dead drift)
     """
@@ -105,9 +120,9 @@ class ConsumerStaplesMeanReversionRule(Rule):
     def __init__(
         self,
         bb_oversold: float = 0.15,
-        rsi_floor: float = 25.0,
+        rsi_floor: float = 22.0,
         rsi_ceiling: float = 45.0,
-        adx_max: float = 18.0,
+        adx_max: float = 20.0,
     ):
         self.bb_oversold = bb_oversold
         self.rsi_floor = rsi_floor
@@ -116,12 +131,12 @@ class ConsumerStaplesMeanReversionRule(Rule):
 
     @property
     def name(self) -> str:
-        return "Consumer Staples Mean Reversion"
+        return "Healthcare Mean Reversion"
 
     @property
     def description(self) -> str:
         return (
-            f"Buy consumer staples when BB%<{self.bb_oversold}, "
+            f"Buy healthcare stocks when BB%<{self.bb_oversold}, "
             f"RSI {self.rsi_floor}-{self.rsi_ceiling}, ADX<{self.adx_max}"
         )
 
@@ -144,18 +159,25 @@ class ConsumerStaplesMeanReversionRule(Rule):
         avg_volume = context.get_indicator("volume_sma_20")
         stoch_k = context.get_indicator("Stochastic_K")
 
-        sub_sector = CONSUMER_STAPLES_SECTOR_MAP.get(context.symbol.upper())
+        sub_sector = HEALTHCARE_SECTOR_MAP.get(context.symbol.upper())
         if not sub_sector:
             return RuleResult(
                 triggered=False,
-                reasoning=f"{context.symbol} not in consumer staples sector list"
+                reasoning=f"{context.symbol} not in healthcare sector list"
             )
 
-        # Retail growth (COST) should use momentum rules, not mean reversion
-        if sub_sector == "retail_growth":
+        # Clinical-stage biotech — EXCLUDE from ALL rules
+        if sub_sector == "clinical_biotech":
             return RuleResult(
                 triggered=False,
-                reasoning=f"{context.symbol} is retail_growth — use momentum rules"
+                reasoning=f"{context.symbol} is clinical_biotech — binary trial risk, excluded from all rules"
+            )
+
+        # Medical devices/growth — use momentum rules, not mean reversion
+        if sub_sector in ("med_devices", "med_growth"):
+            return RuleResult(
+                triggered=False,
+                reasoning=f"{context.symbol} is {sub_sector} — use momentum rules"
             )
 
         # SMA_200 is the absolute floor
@@ -187,7 +209,7 @@ class ConsumerStaplesMeanReversionRule(Rule):
             )
 
         # Sub-sector-specific RSI threshold
-        rsi_oversold = STAPLES_RSI_OVERSOLD.get(sub_sector, 40)
+        rsi_oversold = HEALTHCARE_RSI_OVERSOLD.get(sub_sector, 38)
         effective_ceiling = min(self.rsi_ceiling, rsi_oversold + 7)
 
         if rsi < self.rsi_floor:
@@ -244,8 +266,8 @@ class ConsumerStaplesMeanReversionRule(Rule):
 
         # Seasonal adjustment
         current_month = context.timestamp.month
-        strong_months = STAPLES_SEASONAL_STRENGTH.get(sub_sector, [])
-        weak_months = STAPLES_SEASONAL_WEAKNESS.get(sub_sector, [])
+        strong_months = HEALTHCARE_SEASONAL_STRENGTH.get(sub_sector, [])
+        weak_months = HEALTHCARE_SEASONAL_WEAKNESS.get(sub_sector, [])
 
         if current_month in strong_months:
             base_confidence += 0.05
@@ -259,7 +281,7 @@ class ConsumerStaplesMeanReversionRule(Rule):
             signal=SignalType.BUY,
             confidence=confidence,
             reasoning=(
-                f"STAPLES MEAN REVERSION: {context.symbol} ({sub_sector}) oversold at "
+                f"HEALTHCARE MEAN REVERSION: {context.symbol} ({sub_sector}) oversold at "
                 f"BB support (BB%={bb_pct:.2f}, RSI={rsi:.1f}). "
                 f"ADX={adx:.1f} confirms mean-reverting. "
                 f"Golden cross intact (SMA_50 > SMA_200)."
@@ -276,20 +298,18 @@ class ConsumerStaplesMeanReversionRule(Rule):
         )
 
 
-class ConsumerStaplesPullbackRule(Rule):
+class HealthcarePullbackRule(Rule):
     """
-    Buy consumer staples on pullback to SMA_50 support with momentum
+    Buy healthcare stocks on pullback to SMA_50 support with momentum
     confirmation.
 
-    Uses SMA_50 (not EMA_21) because staples price action is
-    structurally slow — fast moving averages generate noise.
-
-    Excludes retail_growth (COST).
+    Applies to all mean-reverting healthcare sub-sectors.
+    Excludes med_devices, med_growth (use momentum), clinical_biotech (binary risk).
     """
 
     def __init__(
         self,
-        pullback_tolerance_pct: float = 2.0,
+        pullback_tolerance_pct: float = 2.5,
         rsi_max: float = 45.0,
     ):
         self.pullback_tolerance_pct = pullback_tolerance_pct
@@ -297,12 +317,12 @@ class ConsumerStaplesPullbackRule(Rule):
 
     @property
     def name(self) -> str:
-        return "Consumer Staples Pullback"
+        return "Healthcare Pullback"
 
     @property
     def description(self) -> str:
         return (
-            f"Buy consumer staples pullbacks to SMA_50 (within {self.pullback_tolerance_pct}%) "
+            f"Buy healthcare pullbacks to SMA_50 (within {self.pullback_tolerance_pct}%) "
             f"with momentum confirmation"
         )
 
@@ -323,17 +343,23 @@ class ConsumerStaplesPullbackRule(Rule):
         adx = context.get_indicator("ADX_14")
         bb_pct = context.get_indicator("BB_PERCENT")
 
-        sub_sector = CONSUMER_STAPLES_SECTOR_MAP.get(context.symbol.upper())
+        sub_sector = HEALTHCARE_SECTOR_MAP.get(context.symbol.upper())
         if not sub_sector:
             return RuleResult(
                 triggered=False,
-                reasoning=f"{context.symbol} not in consumer staples sector list"
+                reasoning=f"{context.symbol} not in healthcare sector list"
             )
 
-        if sub_sector == "retail_growth":
+        if sub_sector == "clinical_biotech":
             return RuleResult(
                 triggered=False,
-                reasoning=f"{context.symbol} is retail_growth — use momentum rules"
+                reasoning=f"{context.symbol} is clinical_biotech — binary trial risk, excluded"
+            )
+
+        if sub_sector in ("med_devices", "med_growth"):
+            return RuleResult(
+                triggered=False,
+                reasoning=f"{context.symbol} is {sub_sector} — use momentum rules"
             )
 
         # Golden cross required
@@ -368,7 +394,7 @@ class ConsumerStaplesPullbackRule(Rule):
             )
 
         # MACD histogram should be improving
-        if macd_hist < -0.3:
+        if macd_hist < -0.5:
             return RuleResult(
                 triggered=False,
                 reasoning=f"MACD histogram {macd_hist:.3f} still declining"
@@ -384,7 +410,7 @@ class ConsumerStaplesPullbackRule(Rule):
             base_confidence += 0.05
 
         # RSI depth
-        rsi_oversold = STAPLES_RSI_OVERSOLD.get(sub_sector, 40)
+        rsi_oversold = HEALTHCARE_RSI_OVERSOLD.get(sub_sector, 38)
         if rsi < rsi_oversold:
             base_confidence += 0.10
         elif rsi < rsi_oversold + 5:
@@ -399,7 +425,7 @@ class ConsumerStaplesPullbackRule(Rule):
             base_confidence += 0.05
 
         # ADX low = mean-reverting
-        if adx is not None and adx < 18:
+        if adx is not None and adx < 20:
             base_confidence += 0.05
 
         # SMA_20 > SMA_50 still intact
@@ -408,8 +434,8 @@ class ConsumerStaplesPullbackRule(Rule):
 
         # Seasonal adjustment
         current_month = context.timestamp.month
-        strong_months = STAPLES_SEASONAL_STRENGTH.get(sub_sector, [])
-        weak_months = STAPLES_SEASONAL_WEAKNESS.get(sub_sector, [])
+        strong_months = HEALTHCARE_SEASONAL_STRENGTH.get(sub_sector, [])
+        weak_months = HEALTHCARE_SEASONAL_WEAKNESS.get(sub_sector, [])
 
         if current_month in strong_months:
             base_confidence += 0.05
@@ -423,7 +449,7 @@ class ConsumerStaplesPullbackRule(Rule):
             signal=SignalType.BUY,
             confidence=confidence,
             reasoning=(
-                f"STAPLES PULLBACK: {context.symbol} ({sub_sector}) at SMA_50 support "
+                f"HEALTHCARE PULLBACK: {context.symbol} ({sub_sector}) at SMA_50 support "
                 f"({distance_pct:+.1f}% from SMA_50). RSI={rsi:.1f}, "
                 f"MACD_H={macd_hist:.3f}. Golden cross intact."
             ),
@@ -437,17 +463,18 @@ class ConsumerStaplesPullbackRule(Rule):
         )
 
 
-class ConsumerStaplesSeasonalityRule(Rule):
+class HealthcareSeasonalityRule(Rule):
     """
-    Adjust confidence for consumer staples seasonal patterns.
+    Adjust confidence for healthcare seasonal patterns.
 
-    Staples seasonality:
-    - Beverages: Q1 + summer (demand peak) strong, Sep weak
-    - Household: Q1 + Q4 (holiday spending) strong, May/Jun/Sep weak
-    - Mass retail: holiday quarter dominant, sell-in-May pattern
-    - ETFs: Q1 + defensive rotation summer, Sep weak
+    Healthcare seasonality (25yr XLV data):
+    - Strongest: Nov (+2.0%, 75% WR), Dec (+2.1%, 75% WR)
+    - Weakest: Sep (-1.2%, 42% WR)
+    - Q1 pharma weakness from insurance deductible resets
+    - Q4 device spending (hospital budget deployment)
 
     Requires base uptrend (SMA_20 > SMA_50). Blocks new entries in weak months.
+    Excludes clinical_biotech (no meaningful seasonality).
     """
 
     def __init__(
@@ -460,11 +487,11 @@ class ConsumerStaplesSeasonalityRule(Rule):
 
     @property
     def name(self) -> str:
-        return "Consumer Staples Seasonality"
+        return "Healthcare Seasonality"
 
     @property
     def description(self) -> str:
-        return "Adjust confidence for consumer staples seasonal patterns"
+        return "Adjust confidence for healthcare seasonal patterns (Nov-Dec strong, Sep weak)"
 
     @property
     def required_indicators(self) -> list:
@@ -476,24 +503,31 @@ class ConsumerStaplesSeasonalityRule(Rule):
         sma50 = context.get_indicator("SMA_50")
         close = context.get_indicator("close")
 
-        sub_sector = CONSUMER_STAPLES_SECTOR_MAP.get(context.symbol.upper())
+        sub_sector = HEALTHCARE_SECTOR_MAP.get(context.symbol.upper())
         if not sub_sector:
             return RuleResult(
                 triggered=False,
-                reasoning=f"{context.symbol} not in consumer staples sector list"
+                reasoning=f"{context.symbol} not in healthcare sector list"
+            )
+
+        # Clinical-stage biotech excluded
+        if sub_sector == "clinical_biotech":
+            return RuleResult(
+                triggered=False,
+                reasoning=f"{context.symbol} is clinical_biotech — no meaningful seasonality"
             )
 
         current_month = context.timestamp.month
 
-        strong_months = STAPLES_SEASONAL_STRENGTH.get(sub_sector, [])
-        weak_months = STAPLES_SEASONAL_WEAKNESS.get(sub_sector, [])
+        strong_months = HEALTHCARE_SEASONAL_STRENGTH.get(sub_sector, [])
+        weak_months = HEALTHCARE_SEASONAL_WEAKNESS.get(sub_sector, [])
 
         is_strong_month = current_month in strong_months
         is_weak_month = current_month in weak_months
 
         # Base signal check
         uptrend = sma20 > sma50
-        reasonable_rsi = 25 <= rsi <= 65
+        reasonable_rsi = 22 <= rsi <= 65
 
         if not uptrend:
             return RuleResult(
@@ -502,7 +536,7 @@ class ConsumerStaplesSeasonalityRule(Rule):
             )
 
         if not reasonable_rsi:
-            if rsi < 25:
+            if rsi < 22:
                 reason = f"RSI {rsi:.1f} deeply oversold — use mean reversion rule"
             else:
                 reason = f"RSI {rsi:.1f} overbought"
@@ -541,7 +575,7 @@ class ConsumerStaplesSeasonalityRule(Rule):
             base_confidence += 0.05
 
         # RSI in comfortable range
-        rsi_oversold = STAPLES_RSI_OVERSOLD.get(sub_sector, 40)
+        rsi_oversold = HEALTHCARE_RSI_OVERSOLD.get(sub_sector, 38)
         if rsi < rsi_oversold + 5:
             base_confidence += 0.05
 
@@ -552,7 +586,7 @@ class ConsumerStaplesSeasonalityRule(Rule):
             signal=SignalType.BUY,
             confidence=confidence,
             reasoning=(
-                f"STAPLES SEASONALITY: {context.symbol} ({sub_sector}) — "
+                f"HEALTHCARE SEASONALITY: {context.symbol} ({sub_sector}) — "
                 f"{seasonal_status} month. {note}. RSI: {rsi:.1f}, "
                 f"Trend: +{trend_spread:.1f}%"
             ),

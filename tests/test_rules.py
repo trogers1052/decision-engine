@@ -232,7 +232,7 @@ class TestMonthlyUptrendRule:
 class TestFullTrendAlignmentRule:
     def test_full_alignment(self):
         r = FullTrendAlignmentRule()
-        result = r.evaluate(ctx(SMA_20=110.0, SMA_50=105.0, SMA_200=100.0))
+        result = r.evaluate(ctx(SMA_20=110.0, SMA_50=105.0, SMA_200=100.0, volume=1000000, volume_sma_20=1000000))
         assert result.triggered is True
         assert result.signal == SignalType.BUY
 
@@ -248,9 +248,23 @@ class TestFullTrendAlignmentRule:
 
     def test_confidence_scales_with_spread(self):
         r = FullTrendAlignmentRule()
-        weak = r.evaluate(ctx(SMA_20=101.0, SMA_50=100.5, SMA_200=100.0))
-        strong = r.evaluate(ctx(SMA_20=120.0, SMA_50=110.0, SMA_200=100.0))
+        weak = r.evaluate(ctx(SMA_20=101.0, SMA_50=100.5, SMA_200=100.0, volume=1000000, volume_sma_20=1000000))
+        strong = r.evaluate(ctx(SMA_20=120.0, SMA_50=110.0, SMA_200=100.0, volume=1000000, volume_sma_20=1000000))
         assert strong.confidence > weak.confidence
+
+    def test_missing_volume_rejects(self):
+        """Missing volume data should fail-closed (not silently pass)."""
+        r = FullTrendAlignmentRule()
+        result = r.evaluate(ctx(SMA_20=110.0, SMA_50=105.0, SMA_200=100.0))
+        assert result.triggered is False
+        assert "volume" in result.reasoning.lower()
+
+    def test_missing_volume_sma_rejects(self):
+        """Missing volume_sma_20 should fail-closed (not fall back to volume)."""
+        r = FullTrendAlignmentRule()
+        result = r.evaluate(ctx(SMA_20=110.0, SMA_50=105.0, SMA_200=100.0, volume=1000000))
+        assert result.triggered is False
+        assert "volume" in result.reasoning.lower()
 
 
 class TestTrendBreakWarningRule:

@@ -668,5 +668,34 @@ class TestPriceContext(unittest.TestCase):
         self.assertIn("price_context", d)
 
 
+class TestTierMultiplierRiskCap(unittest.TestCase):
+    """Tier size multiplier must not push risk above 2%."""
+
+    def test_s_tier_multiplier_capped_at_2pct(self):
+        """S-tier 1.15x multiplier must not breach 2% risk cap."""
+        engine = _engine(default_account_balance=1000.0)
+        signal = _make_aggregated("APH", ["Enhanced Buy Dip"])
+        # Generate with S-tier multiplier (1.15x)
+        plan = engine.generate(signal, BASE_INDICATORS, position_size_multiplier=1.15)
+        self.assertLessEqual(plan.risk_pct, 2.01,
+            f"Risk {plan.risk_pct:.2f}% exceeds 2% cap after S-tier multiplier")
+
+    def test_large_multiplier_capped_at_2pct(self):
+        """Even an extreme multiplier cannot breach 2% risk."""
+        engine = _engine(default_account_balance=1000.0)
+        signal = _make_aggregated("APH", ["Enhanced Buy Dip"])
+        plan = engine.generate(signal, BASE_INDICATORS, position_size_multiplier=2.0)
+        self.assertLessEqual(plan.risk_pct, 2.01,
+            f"Risk {plan.risk_pct:.2f}% exceeds 2% cap after 2.0x multiplier")
+
+    def test_downward_multiplier_reduces_shares(self):
+        """D-tier 0.65x multiplier should reduce shares (no cap needed)."""
+        engine = _engine(default_account_balance=1000.0)
+        signal = _make_aggregated("APH", ["Enhanced Buy Dip"])
+        plan_neutral = engine.generate(signal, BASE_INDICATORS, position_size_multiplier=1.0)
+        plan_d_tier = engine.generate(signal, BASE_INDICATORS, position_size_multiplier=0.65)
+        self.assertLessEqual(plan_d_tier.shares, plan_neutral.shares)
+
+
 if __name__ == "__main__":
     unittest.main()
