@@ -510,14 +510,26 @@ class DecisionEngineService:
                         should_publish = False
 
                     # Portfolio risk gate: reads real-time state from
-                    # stop-loss-guardian's portfolio monitor (fail-open).
+                    # stop-loss-guardian's portfolio monitor (fail-closed).
                     if (
                         should_publish
                         and self.portfolio_risk_reader
                         and aggregated_signal.signal_type == SignalType.BUY
                     ):
                         pf_state = self.portfolio_risk_reader.get_state()
-                        if pf_state is not None:
+                        if pf_state is None:
+                            # Fail-closed: if guardian state is unavailable,
+                            # block BUY signals. Capital preservation > signal
+                            # delivery.
+                            m.SIGNALS_REJECTED.labels(
+                                reason="risk_gate"
+                            ).inc()
+                            logger.warning(
+                                f"Portfolio gate: guardian state unavailable "
+                                f"for {symbol} — BLOCKING signal (fail-closed)"
+                            )
+                            should_publish = False
+                        else:
                             max_stops = self._config.get(
                                 "portfolio_max_stops_per_day", 3
                             )
