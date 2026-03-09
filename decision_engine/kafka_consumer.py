@@ -52,7 +52,9 @@ class IndicatorConsumer:
                 self.topic,
                 bootstrap_servers=self.brokers,
                 group_id=self.consumer_group,
-                value_deserializer=lambda m: json.loads(m.decode("utf-8")),
+                # Keep raw bytes — decode manually in the loop to avoid
+                # poison messages causing an infinite retry loop.
+                value_deserializer=lambda m: m,
                 # Use 'earliest' to prevent data loss on restart
                 auto_offset_reset="earliest",
                 enable_auto_commit=False,
@@ -78,8 +80,19 @@ class IndicatorConsumer:
 
         try:
             for message in self._consumer:
+                # Deserialize manually — a poison message (malformed JSON)
+                # must be committed past, not retried forever.
                 try:
-                    event = message.value
+                    event = json.loads(message.value.decode("utf-8"))
+                except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                    logger.error(
+                        f"Poison message at offset {message.offset} "
+                        f"(partition={message.partition}): {e} — skipping",
+                    )
+                    self._consumer.commit()
+                    continue
+
+                try:
                     self.message_handler(event)
                     self._consumer.commit()
                 except Exception as e:
@@ -89,7 +102,7 @@ class IndicatorConsumer:
                     # for the symbol replaces the missed data within minutes.
                     symbol = "unknown"
                     try:
-                        symbol = message.value.get("data", {}).get("symbol", "unknown")
+                        symbol = event.get("data", {}).get("symbol", "unknown")
                     except Exception:
                         pass
                     logger.error(
@@ -98,6 +111,7 @@ class IndicatorConsumer:
                         f"(partition={message.partition}): {e}",
                         exc_info=True,
                     )
+                    self._consumer.commit()
 
         except KeyboardInterrupt:
             logger.info("Consumer interrupted by user")

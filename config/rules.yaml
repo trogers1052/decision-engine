@@ -359,6 +359,48 @@ active_tickers:
       trades_per_year: 13
     min_confidence: 0.65
 
+  OKE:
+    # VALIDATED 2026-03-08: 4/4 gates passed (WB+BS+MC+Regime) — best energy stock
+    # Walk-Backward ROBUST (2/3 regimes pass): 2022 Bear +3.5%, 2023-2024 Chop +31.9%
+    # Bootstrap p=0.0194 (statistically significant), MC Ruin=0%, P95 DD=-19.0%
+    # Regime: well distributed — bull:9t/+28.1%, bear:2t/+20.9%, chop:1t/+11.7%
+    # Energy combo: energy_momentum + dip_recovery + energy_seasonality + death_cross
+    description: "ONEOK - Midstream Energy (75% WR, +65.5%, 1.09 Sharpe, 3.48 PF, -14.7% DD)"
+    rules:
+      - energy_momentum
+      - dip_recovery
+      - energy_seasonality
+      - death_cross
+    exit_strategy:
+      profit_target: 0.10
+      stop_loss: 0.08
+      max_loss_pct: 8.0
+      cooldown_bars: 5
+      win_rate: 0.75
+      trades_per_year: 3
+    min_confidence: 0.6
+
+  PSX:
+    # VALIDATED 2026-03-08: 3/4 gates passed (WB+MC+Regime, Bootstrap fails p=0.0344)
+    # Walk-Backward ROBUST (2/3 regimes pass): 2022 Bear +6.9%, 2023-2024 Chop +27.9%
+    # Bootstrap p=0.0344 (very close to 0.05 threshold), MC Ruin=0%, P95 DD=-26.0%
+    # Regime: well distributed — bull:20t/+38.4%, bear:2t/+5.6%, chop:1t/+10.4%
+    # Highest Sharpe in energy cohort (1.53)
+    # Energy combo: energy_momentum + energy_seasonality + death_cross
+    description: "Phillips 66 - Integrated Energy (58% WR, +62.9%, 1.53 Sharpe, 1.89 PF, -20.8% DD)"
+    rules:
+      - energy_momentum
+      - energy_seasonality
+      - death_cross
+    exit_strategy:
+      profit_target: 0.08
+      stop_loss: 0.05
+      max_loss_pct: 5.0
+      cooldown_bars: 5
+      win_rate: 0.58
+      trades_per_year: 6
+    min_confidence: 0.5
+
   # =========================================================================
   # TIER 2 - GOOD PERFORMERS (Sharpe 0.5-0.75)
   # =========================================================================
@@ -548,6 +590,8 @@ active_tickers:
 #       Negative train Sharpe across ALL configs. Best: +4.6%, 0.00 Sharpe. No edge.
 # AVAV: VALIDATED 2026-03-02: 2/4 gates max (WF+Regime only)
 #       MC fails (P95 DD=-43.5%). High return (+104%) but too risky.
+# NEP:  BLACKLISTED 2026-03-08 — structural decline (-85% total return), untradeable for long-only.
+#       No rules produce edge. Renewables yieldco in terminal distribution cut spiral. Data purged from TimescaleDB.
 # PAAS: 48.1% WR, +14.2%, 0.17 Sharpe, -55.9% DD = not worth it
 # FCX:  52.9% WR, +15.9%, 0.18 Sharpe, -39.5% DD = not worth it
 # -----------------------------------------------------------------------------

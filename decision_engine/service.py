@@ -5,6 +5,7 @@ Main decision engine service.
 import json
 import logging
 import math
+import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
@@ -28,6 +29,7 @@ from .models.signals import Signal, AggregatedSignal, ConfidenceAggregator
 from .models.trade_plan import TradePlan
 from .rules_cache import RulesCache
 from .trade_planner import TradePlanEngine
+from . import metrics as m
 
 # Risk engine integration (mandatory for BUY signal gating)
 from risk_engine import RiskAdapter
@@ -303,6 +305,8 @@ class DecisionEngineService:
                 logger.debug(f"Ignoring non-indicator event: {event.get('event_type')}")
                 return
 
+            m.INDICATORS_CONSUMED.inc()
+
             data = event.get("data", {})
             symbol = data.get("symbol")
             indicators = data.get("indicators", {})
@@ -344,6 +348,7 @@ class DecisionEngineService:
 
             # Suppress blacklisted symbols (F-tier, zero trades)
             if self.tier_reader and self.tier_reader.is_blacklisted(symbol):
+                m.SIGNALS_REJECTED.labels(reason="blacklist").inc()
                 logger.debug(f"Skipping blacklisted symbol: {symbol}")
                 return
 
@@ -356,15 +361,21 @@ class DecisionEngineService:
 
             # Update state
             self.state_manager.update_indicators(symbol, indicators, timestamp)
+            m.SYMBOLS_TRACKED.set(len(self.state_manager._states))
 
             # Evaluate rules
+            _eval_start = time.monotonic()
             aggregated_signal = self._evaluate_rules(
                 symbol, indicators, timestamp, data_quality
             )
+            m.EVALUATION_DURATION.observe(time.monotonic() - _eval_start)
 
             if aggregated_signal:
                 # Record in state
                 self.state_manager.record_signal(symbol, aggregated_signal)
+                m.SIGNALS_GENERATED.labels(
+                    signal_type=aggregated_signal.signal_type.value
+                ).inc()
 
                 # Generate trade plan for BUY signals before publishing
                 trade_plan: Optional[TradePlan] = None
@@ -382,6 +393,7 @@ class DecisionEngineService:
                             aggregated_signal, indicators,
                             position_size_multiplier=psm,
                         )
+                        m.TRADE_PLANS_GENERATED.inc()
                         if trade_plan.rr_warning:
                             logger.warning(
                                 f"Trade plan R:R warning for {symbol}: {trade_plan.rr_warning}"
@@ -420,6 +432,9 @@ class DecisionEngineService:
                             symbol=symbol,
                             allowed_regimes=allowed_regimes,
                         )
+                        m.CHECKLIST_RESULTS.labels(
+                            status=checklist_result.status
+                        ).inc()
                     except Exception as exc:
                         logger.warning(
                             f"Checklist evaluation failed for {symbol}: {exc}"
@@ -433,6 +448,7 @@ class DecisionEngineService:
                     checklist_result is not None
                     and checklist_result.status == "BLOCKED"
                 ):
+                    m.SIGNALS_REJECTED.labels(reason="checklist_blocked").inc()
                     logger.warning(
                         f"Checklist BLOCKED for {symbol} — suppressing "
                         f"{aggregated_signal.signal_type.value} signal "
@@ -447,6 +463,7 @@ class DecisionEngineService:
                     and aggregated_signal.signal_type == SignalType.BUY
                     and not trade_plan.plan_valid
                 ):
+                    m.SIGNALS_REJECTED.labels(reason="rr_gate").inc()
                     min_rr = self._config.get("trade_plan_engine", {}).get("min_rr_ratio", 2.0)
                     logger.warning(
                         f"R:R gate: suppressing BUY for {symbol} — "
@@ -468,6 +485,7 @@ class DecisionEngineService:
                         and aggregated_signal.signal_type == SignalType.BUY
                         and self.daily_loss_monitor.is_halted()
                     ):
+                        m.SIGNALS_REJECTED.labels(reason="daily_loss").inc()
                         logger.warning(
                             f"Daily loss circuit breaker: suppressing BUY for {symbol} "
                             f"(daily P&L: {self.daily_loss_monitor.get_daily_pnl_pct():.1%})"
@@ -482,6 +500,7 @@ class DecisionEngineService:
                         and aggregated_signal.signal_type == SignalType.BUY
                         and self.market_context_reader.is_stale()
                     ):
+                        m.SIGNALS_REJECTED.labels(reason="stale_context").inc()
                         staleness = self.market_context_reader.get_staleness_seconds()
                         staleness_min = (staleness or 0) / 60
                         logger.warning(
@@ -506,18 +525,21 @@ class DecisionEngineService:
                                 "portfolio_max_actual_heat", 0.10
                             )
                             if pf_state.halted:
+                                m.SIGNALS_REJECTED.labels(reason="risk_gate").inc()
                                 logger.warning(
                                     f"Portfolio gate: guardian halted — "
                                     f"{pf_state.halt_reason}"
                                 )
                                 should_publish = False
                             elif pf_state.stops_hit_today >= max_stops:
+                                m.SIGNALS_REJECTED.labels(reason="risk_gate").inc()
                                 logger.warning(
                                     f"Portfolio gate: {pf_state.stops_hit_today} "
                                     f"stops hit today (limit: {max_stops})"
                                 )
                                 should_publish = False
                             elif pf_state.actual_portfolio_heat > max_heat:
+                                m.SIGNALS_REJECTED.labels(reason="risk_gate").inc()
                                 logger.warning(
                                     f"Portfolio gate: actual heat "
                                     f"{pf_state.actual_portfolio_heat:.1%} "
@@ -528,6 +550,8 @@ class DecisionEngineService:
                     # Risk gate: MANDATORY for all BUY signals (fail-closed)
                     if aggregated_signal.signal_type == SignalType.BUY:
                         if not self.risk_adapter:
+                            m.SIGNALS_REJECTED.labels(reason="risk_gate").inc()
+                            m.RISK_GATE_BLOCKS.inc()
                             logger.warning(
                                 f"Risk gate BLOCKED {symbol}: "
                                 f"risk engine not available — no BUY signals "
@@ -543,6 +567,8 @@ class DecisionEngineService:
                                     indicators=indicators,
                                 )
                                 if not risk_result.passes:
+                                    m.SIGNALS_REJECTED.labels(reason="risk_gate").inc()
+                                    m.RISK_GATE_BLOCKS.inc()
                                     logger.info(
                                         f"Risk check rejected {symbol}: "
                                         f"{risk_result.reason}"
@@ -551,6 +577,8 @@ class DecisionEngineService:
                             except Exception as risk_exc:
                                 # Fail-closed: risk engine errors BLOCK the signal.
                                 # Capital preservation > signal delivery.
+                                m.SIGNALS_REJECTED.labels(reason="risk_gate").inc()
+                                m.RISK_GATE_BLOCKS.inc()
                                 logger.error(
                                     f"Risk check error for {symbol}: {risk_exc} — "
                                     f"BLOCKING signal (fail-closed)",
@@ -566,6 +594,9 @@ class DecisionEngineService:
                             trade_plan=trade_plan,
                             checklist_result=checklist_result,
                         )
+                        m.SIGNALS_PUBLISHED.labels(
+                            signal_type=aggregated_signal.signal_type.value
+                        ).inc()
                         self._last_publish[symbol] = datetime.utcnow()
 
             # Check if we should publish rankings
@@ -640,9 +671,14 @@ class DecisionEngineService:
                 continue
 
             rules_evaluated += 1
+            m.RULE_EVALUATIONS.labels(rule_name=rule.name).inc()
             result = rule.evaluate(context)
 
             if result.triggered:
+                m.RULE_FIRES.labels(
+                    rule_name=rule.name,
+                    signal_type=result.signal.value,
+                ).inc()
                 signal = Signal(
                     rule_name=rule.name,
                     rule_description=rule.description,
@@ -845,6 +881,7 @@ class DecisionEngineService:
         if last:
             elapsed = (now - last).total_seconds()
             if elapsed < self.settings.debounce_seconds:
+                m.SIGNALS_REJECTED.labels(reason="debounce").inc()
                 return False
 
         # Skip SELL signals if we don't have a position in this symbol.
