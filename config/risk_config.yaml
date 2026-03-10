@@ -122,6 +122,8 @@ symbol_overrides:
 portfolio_monitoring:
   portfolio_max_stops_per_day: 3       # Block new entries after N stops hit today
   portfolio_max_actual_heat: 0.10      # Block if actual heat (real stop distances) exceeds 10%
+  max_sector_heat: 0.06                # Block if sector cumulative risk exceeds 6%
+  max_sector_positions: 2              # Block if sector already has 2 positions
 
 # Logging
 log_level: "INFO"

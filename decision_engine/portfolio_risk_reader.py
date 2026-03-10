@@ -16,8 +16,8 @@ protection still flows through the risk-engine's mandatory check.
 
 import json
 import logging
-from dataclasses import dataclass
-from typing import List, Optional
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
 
 import redis
 
@@ -38,6 +38,8 @@ class PortfolioRiskState:
     halt_reason: Optional[str]
     open_position_count: int
     gap_alerts: List[dict]
+    sector_heat: Dict[str, float] = field(default_factory=dict)
+    position_risks: Dict[str, dict] = field(default_factory=dict)
 
 
 class PortfolioRiskReader:
@@ -112,6 +114,8 @@ class PortfolioRiskReader:
                 halt_reason=data.get("halt_reason"),
                 open_position_count=data.get("open_position_count", 0),
                 gap_alerts=data.get("gap_alerts", []),
+                sector_heat=data.get("sector_heat", {}),
+                position_risks=data.get("position_risks", {}),
             )
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             logger.warning(f"PortfolioRiskReader: parse error: {e}")

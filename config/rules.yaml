@@ -614,3 +614,38 @@ trade_plan_engine:
     pullback_to_support: "2d"    # Valid for 2 trading days
     breakout: "2h"               # Valid for 2 hours (breakouts go or fail fast)
     signal: "eod"                # Generic signals valid until EOD
+
+# -----------------------------------------------------------------------------
+# Portfolio Risk Gates — real-time checks from stop-loss-guardian via Redis
+# These supplement the risk-engine's mandatory check with live portfolio state.
+# -----------------------------------------------------------------------------
+portfolio_max_stops_per_day: 3         # Block new entries after N stops hit today
+portfolio_max_actual_heat: 0.10        # Block if actual heat (real stop distances) exceeds 10%
+max_sector_heat: 0.06                  # Block if sector cumulative risk exceeds 6%
+max_sector_positions: 2                # Block if sector already has 2 positions
+
+# Sector groups — symbols grouped by correlated sector
+# Must match stop-loss-guardian's SECTOR_GROUPS for consistent enforcement
+sector_groups:
+  uranium:
+    - CCJ
+    - URNM
+    - UUUU
+  precious_metals:
+    - WPM
+    - SLV
+    - IAUM
+    - PPLT
+  industrial:
+    - CAT
+    - ETN
+  rare_earth:
+    - MP
+  defense:
+    - RTX
+    - ITA
+    - AVAV
+  semiconductor:
+    - APH
+  energy:
+    - XLE

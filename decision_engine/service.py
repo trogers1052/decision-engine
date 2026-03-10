@@ -559,6 +559,49 @@ class DecisionEngineService:
                                 )
                                 should_publish = False
 
+                            # Sector concentration gate
+                            if should_publish and pf_state.sector_heat:
+                                symbol_sector = self._get_sector_for_symbol(
+                                    symbol
+                                )
+                                if symbol_sector:
+                                    max_sector_heat = self._config.get(
+                                        "max_sector_heat", 0.06
+                                    )
+                                    max_sector_pos = self._config.get(
+                                        "max_sector_positions", 2
+                                    )
+                                    current_heat = pf_state.sector_heat.get(
+                                        symbol_sector, 0.0
+                                    )
+                                    sector_pos_count = sum(
+                                        1
+                                        for pr in pf_state.position_risks.values()
+                                        if pr.get("sector") == symbol_sector
+                                    )
+                                    if current_heat >= max_sector_heat:
+                                        m.SIGNALS_REJECTED.labels(
+                                            reason="sector_concentration"
+                                        ).inc()
+                                        logger.warning(
+                                            f"Sector gate: {symbol_sector} "
+                                            f"heat {current_heat:.1%} >= "
+                                            f"{max_sector_heat:.0%} limit — "
+                                            f"blocking {symbol}"
+                                        )
+                                        should_publish = False
+                                    elif sector_pos_count >= max_sector_pos:
+                                        m.SIGNALS_REJECTED.labels(
+                                            reason="sector_concentration"
+                                        ).inc()
+                                        logger.warning(
+                                            f"Sector gate: {symbol_sector} "
+                                            f"has {sector_pos_count} positions "
+                                            f"(limit: {max_sector_pos}) — "
+                                            f"blocking {symbol}"
+                                        )
+                                        should_publish = False
+
                     # Risk gate: MANDATORY for all BUY signals (fail-closed)
                     if aggregated_signal.signal_type == SignalType.BUY:
                         if not self.risk_adapter:
@@ -871,6 +914,16 @@ class DecisionEngineService:
             regime_conditional=tier_regime_conditional,
             allowed_regimes=tier_allowed_regimes,
         )
+
+    def _get_sector_for_symbol(self, symbol: str) -> Optional[str]:
+        """Look up which sector a symbol belongs to from risk config."""
+        if not hasattr(self, "_symbol_to_sector"):
+            self._symbol_to_sector = {}
+            sector_groups = self._config.get("sector_groups", {})
+            for sector, symbols in sector_groups.items():
+                for sym in symbols:
+                    self._symbol_to_sector[sym] = sector
+        return self._symbol_to_sector.get(symbol)
 
     def _should_publish(self, symbol: str, signal: AggregatedSignal) -> bool:
         """Check if we should publish this signal."""
