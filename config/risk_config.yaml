@@ -1,17 +1,9 @@
 # Risk Engine Configuration
-
-# Redis connection for portfolio state
-redis_host: "localhost"
-redis_port: 6379
-redis_db: 0
-redis_positions_key: "robinhood:positions"
-
-# TimescaleDB connection for historical data
-timescale_host: "localhost"
-timescale_port: 5432
-timescale_db: "market_data"
-timescale_user: "postgres"
-timescale_password: ""
+#
+# Connection settings (redis_host, timescale_host, etc.) are NOT set here.
+# They come from environment variables (RISK_REDIS_HOST, RISK_TIMESCALE_HOST, etc.)
+# set in docker-compose.yml. Putting them here would override env vars because
+# pydantic-settings treats YAML init kwargs as highest priority.
 
 # Position Sizing Configuration
 position_sizing:
