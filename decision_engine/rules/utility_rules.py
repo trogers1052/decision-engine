@@ -455,6 +455,211 @@ class UtilityRateReversionRule(Rule):
         )
 
 
+class NuclearPowerMomentumRule(Rule):
+    """
+    Buy nuclear/AI power stocks on trend-following pullbacks.
+
+    VST, CEG, and OKLO are NOT traditional utilities — they're momentum-driven
+    AI data center power plays with betas of 1.4+. They behave like high-beta
+    tech stocks, not defensive utilities.
+
+    Key dynamics:
+    1. AI data center power demand is a secular megatrend (2024-2030+)
+    2. Nuclear is the only baseload carbon-free power source for hyperscalers
+    3. These stocks trend strongly (high ADX) — trend-following, not mean-reversion
+    4. Pullbacks to EMA_21 in uptrends are the highest-conviction entries
+    5. MACD and momentum indicators work better than BB/Stochastic
+    6. Policy catalysts (NRC approvals, DOE contracts) create gap-up opportunities
+
+    Detection:
+    - EMA_21 > SMA_50 > SMA_200 (stacked MAs = confirmed uptrend)
+    - Price within 3% of EMA_21 (pullback to support)
+    - ADX_14 > 20 (trending, NOT mean-reverting)
+    - RSI 35-65 (pulling back from momentum, not collapsing)
+    - Volume >= 60% of average
+    - MACD above signal or histogram improving
+
+    Only triggers for nuclear_power sub-sector.
+    """
+
+    def __init__(
+        self,
+        pullback_pct: float = 3.0,
+        min_adx: float = 20.0,
+        min_volume_ratio: float = 0.6,
+    ):
+        self.pullback_pct = pullback_pct
+        self.min_adx = min_adx
+        self.min_volume_ratio = min_volume_ratio
+
+    @property
+    def name(self) -> str:
+        return "Nuclear Power Momentum"
+
+    @property
+    def description(self) -> str:
+        return "Buy nuclear/AI power stocks on trend pullback to EMA_21"
+
+    @property
+    def required_indicators(self) -> list:
+        return [
+            "RSI_14", "EMA_21", "SMA_50", "SMA_200", "close",
+            "volume", "ADX_14", "MACD", "MACD_SIGNAL",
+        ]
+
+    def evaluate(self, context: SymbolContext) -> RuleResult:
+        sub_sector = UTILITY_SECTOR_MAP.get(context.symbol.upper())
+        if not sub_sector:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"{context.symbol} not in utility sector list"
+            )
+
+        # Only for nuclear/AI power stocks
+        if sub_sector != "nuclear_power":
+            return RuleResult(
+                triggered=False,
+                reasoning=f"{context.symbol} ({sub_sector}) is not nuclear_power — use mean reversion"
+            )
+
+        rsi = context.get_indicator("RSI_14")
+        ema21 = context.get_indicator("EMA_21")
+        sma50 = context.get_indicator("SMA_50")
+        sma200 = context.get_indicator("SMA_200")
+        close = context.get_indicator("close")
+        volume = context.get_indicator("volume")
+        avg_volume = context.get_indicator("volume_sma_20")
+        adx = context.get_indicator("ADX_14")
+        macd = context.get_indicator("MACD")
+        macd_signal = context.get_indicator("MACD_SIGNAL")
+
+        # Stacked moving averages required (confirmed uptrend)
+        if not (ema21 > sma50 > sma200):
+            return RuleResult(
+                triggered=False,
+                reasoning=(
+                    f"MAs not stacked: EMA_21={ema21:.2f}, SMA_50={sma50:.2f}, "
+                    f"SMA_200={sma200:.2f} — uptrend not confirmed"
+                )
+            )
+
+        # ADX must confirm trending (not sideways)
+        if adx < self.min_adx:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"ADX {adx:.1f} < {self.min_adx} — no trend, choppy"
+            )
+
+        # Price must be near EMA_21 (pullback to trend support)
+        dist_to_ema = (close - ema21) / ema21 * 100
+        if dist_to_ema > self.pullback_pct:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"Price {dist_to_ema:+.1f}% above EMA_21 — too extended, wait for pullback"
+            )
+        if dist_to_ema < -(self.pullback_pct * 2):
+            return RuleResult(
+                triggered=False,
+                reasoning=f"Price {dist_to_ema:+.1f}% below EMA_21 — trend may be breaking"
+            )
+
+        # Price above SMA_50 (not a breakdown)
+        if close < sma50:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"Price ${close:.2f} below SMA_50 ${sma50:.2f} — breakdown, not pullback"
+            )
+
+        # RSI range (not too hot, not collapsing)
+        if rsi < 30:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"RSI {rsi:.1f} < 30 — momentum broken"
+            )
+        if rsi > 70:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"RSI {rsi:.1f} > 70 — overbought, wait for pullback"
+            )
+
+        # Volume check
+        volume_ratio = volume / avg_volume if avg_volume > 0 else 0.0
+        if volume_ratio < self.min_volume_ratio:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"Volume {volume_ratio:.1f}x too low (need {self.min_volume_ratio}x)"
+            )
+
+        # MACD check — should be above signal or histogram improving
+        macd_hist = macd - macd_signal
+        macd_above_signal = macd > macd_signal
+        macd_improving = macd_hist > -0.5
+
+        if not (macd_above_signal or macd_improving):
+            return RuleResult(
+                triggered=False,
+                reasoning=f"MACD {macd:.3f} below signal {macd_signal:.3f}, histogram {macd_hist:.3f} — momentum negative"
+            )
+
+        # Calculate confidence
+        base_confidence = 0.55
+
+        # Proximity to EMA_21
+        if abs(dist_to_ema) < 1.0:
+            base_confidence += 0.10
+        elif abs(dist_to_ema) < 2.0:
+            base_confidence += 0.05
+
+        # MACD above signal (momentum confirmed)
+        if macd_above_signal:
+            base_confidence += 0.05
+
+        # Strong trend (ADX > 30)
+        if adx > 30:
+            base_confidence += 0.05
+
+        # RSI in sweet spot (40-55 = pullback in uptrend)
+        if 40 <= rsi <= 55:
+            base_confidence += 0.05
+
+        # Volume on pullback
+        if volume_ratio > 1.2:
+            base_confidence += 0.05
+
+        # Trend strength (distance between EMA_21 and SMA_200)
+        trend_spread = (ema21 - sma200) / sma200 * 100
+        if trend_spread > 15:
+            base_confidence += 0.05
+
+        # Seasonal boost: nuclear follows tech/AI sentiment — Q4 + Q1 strong
+        current_month = context.timestamp.month
+        strong_months = UTILITY_SEASONAL_STRENGTH.get(sub_sector, [])
+        if current_month in strong_months:
+            base_confidence += 0.05
+
+        confidence = max(min(base_confidence, 0.85), 0.40)
+
+        return RuleResult(
+            triggered=True,
+            signal=SignalType.BUY,
+            confidence=confidence,
+            reasoning=(
+                f"NUCLEAR MOMENTUM: {context.symbol} pullback to EMA_21 "
+                f"({dist_to_ema:+.1f}%) in strong uptrend. ADX={adx:.1f}, "
+                f"RSI={rsi:.1f}, MACD_H={macd_hist:.3f}. Stacked MAs confirmed."
+            ),
+            contributing_factors={
+                "sub_sector": sub_sector,
+                "dist_to_ema21_pct": round(dist_to_ema, 2),
+                "RSI_14": round(rsi, 1),
+                "ADX_14": round(adx, 1),
+                "MACD_HISTOGRAM": round(macd_hist, 3),
+                "volume_ratio": round(volume_ratio, 2),
+                "trend_spread_pct": round(trend_spread, 2),
+            }
+        )
+
+
 class UtilitySeasonalityRule(Rule):
     """
     Adjust confidence for utility seasonal patterns by sub-sector.

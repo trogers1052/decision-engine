@@ -17,8 +17,9 @@ class TestRuleRegistryMapping:
             assert issubclass(cls, Rule), f"{name} -> {cls} is not a Rule"
 
     def test_expected_count(self):
-        # 3 RSI + 3 MACD + 6 Trend + 4 Composite + 3 Enhanced + 5 Mining = 24
-        assert len(RULE_REGISTRY) == 24
+        # 3 RSI + 3 MACD + 6 Trend + 4 Composite + 3 Enhanced + 5 Mining
+        # + 7 Financial + 7 Tech + 7 Utility + 4 Industrial + 3 Defense = 52
+        assert len(RULE_REGISTRY) == 52
 
     def test_known_keys_present(self):
         expected = [

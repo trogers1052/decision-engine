@@ -55,8 +55,22 @@ TECH_SECTOR_MAP = {
     # Electronic components (low-beta, consistent compounder, mean-reverts)
     "APH": "low_beta_tech",
 
+    # Cybersecurity (high growth, recurring revenue, threat-cycle driven)
+    "S": "saas",          # SentinelOne — endpoint security
+
     # AI/Data center speculative (very high beta, narrative-driven)
     "ALAB": "ai_speculative",
+    "TEM": "ai_speculative",   # Tempus AI — healthcare AI
+    "SNDK": "memory",          # SanDisk — flash storage
+
+    # International tech-heavy ETFs
+    "EWY": "tech_etf",    # South Korea ETF (Samsung/SK Hynix heavy = semi proxy)
+
+    # Computational biology (tech + biotech hybrid)
+    "SDGR": "saas",       # Schrödinger — computational drug discovery platform
+
+    # Large-cap semiconductor (logic/GPU)
+    "AMD": "semi_equip",  # AMD — GPUs, CPUs, data center
 
     # Tech ETFs (lower vol, well-documented mean-reversion strategies)
     "QQQ": "tech_etf",
@@ -444,6 +458,212 @@ class TechMeanReversionRule(Rule):
                 "BB_PERCENT": round(bb_pct, 3),
                 "STOCH_K": round(stoch_k, 1),
                 "reversal_type": reversal_type,
+            }
+        )
+
+
+class SemiCycleRule(Rule):
+    """
+    Buy semiconductor stocks on oversold pullbacks in confirmed uptrends,
+    calibrated for semi-specific cyclicality.
+
+    Semiconductors follow a 3-5 year CAPEX cycle. Within uptrends, pullbacks
+    to SMA_50 or EMA_21 produce reliable bounces because:
+    1. Semi equipment (AMAT, LRCX) receive large CAPEX orders in bunches
+    2. Memory (MU) has extreme inventory cycles — deepest oversold of any tech
+    3. The SOX index leads — relative strength vs broad market confirms cycle direction
+
+    Key differences from TechEMAPullbackRule:
+    - Uses SMA_50 as support (not EMA_21) — semi cycles are slower
+    - Higher volume requirement (0.8x vs 0.7x) — institutions drive semi moves
+    - ADX > 15 required (confirming a trend exists, not a flat chop)
+    - Sub-sector-specific RSI thresholds: semi_equip 30, memory 25
+
+    Detection:
+    - Price within 3% of SMA_50 or touching EMA_21
+    - SMA_50 > SMA_200 (golden cross — cycle is up)
+    - RSI in sub-sector-specific oversold range (not collapsing)
+    - ADX_14 > 15 (trending, not chopping sideways)
+    - Volume >= 80% of average
+    - MACD histogram improving (momentum turning)
+    """
+
+    def __init__(
+        self,
+        pullback_pct: float = 3.0,
+        min_adx: float = 15.0,
+        min_volume_ratio: float = 0.8,
+    ):
+        self.pullback_pct = pullback_pct
+        self.min_adx = min_adx
+        self.min_volume_ratio = min_volume_ratio
+
+    @property
+    def name(self) -> str:
+        return "Semi Cycle"
+
+    @property
+    def description(self) -> str:
+        return "Buy semi stocks on pullback to SMA_50 in confirmed uptrend cycle"
+
+    @property
+    def required_indicators(self) -> list:
+        return [
+            "RSI_14", "EMA_21", "SMA_50", "SMA_200", "close",
+            "volume", "ADX_14", "MACD", "MACD_SIGNAL",
+        ]
+
+    def evaluate(self, context: SymbolContext) -> RuleResult:
+        sub_sector = TECH_SECTOR_MAP.get(context.symbol.upper())
+        if not sub_sector:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"{context.symbol} not in tech stock list"
+            )
+
+        # Only for semiconductor stocks
+        if sub_sector not in ("semi_equip", "memory"):
+            return RuleResult(
+                triggered=False,
+                reasoning=f"{context.symbol} ({sub_sector}) is not a semiconductor stock"
+            )
+
+        rsi = context.get_indicator("RSI_14")
+        ema21 = context.get_indicator("EMA_21")
+        sma50 = context.get_indicator("SMA_50")
+        sma200 = context.get_indicator("SMA_200")
+        close = context.get_indicator("close")
+        volume = context.get_indicator("volume")
+        avg_volume = context.get_indicator("volume_sma_20")
+        adx = context.get_indicator("ADX_14")
+        macd = context.get_indicator("MACD")
+        macd_signal = context.get_indicator("MACD_SIGNAL")
+
+        # Golden cross required (cycle direction is up)
+        if sma50 <= sma200:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"No golden cross: SMA_50={sma50:.2f} <= SMA_200={sma200:.2f} — cycle may be down"
+            )
+
+        # ADX must show a trend exists (not flat chop)
+        if adx < self.min_adx:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"ADX {adx:.1f} < {self.min_adx} — no trend, sideways chop"
+            )
+
+        # Price must be near SMA_50 or EMA_21 (pullback to support)
+        dist_to_sma50 = (close - sma50) / sma50 * 100
+        dist_to_ema21 = (close - ema21) / ema21 * 100
+
+        near_sma50 = -self.pullback_pct <= dist_to_sma50 <= self.pullback_pct
+        near_ema21 = -2.0 <= dist_to_ema21 <= 2.0
+
+        if not (near_sma50 or near_ema21):
+            return RuleResult(
+                triggered=False,
+                reasoning=(
+                    f"Not near support: {dist_to_sma50:+.1f}% from SMA_50, "
+                    f"{dist_to_ema21:+.1f}% from EMA_21"
+                )
+            )
+
+        # Price must be above SMA_200 (cycle still intact)
+        if close < sma200:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"Price ${close:.2f} below SMA_200 ${sma200:.2f} — cycle broken"
+            )
+
+        # RSI must be in sub-sector-specific oversold range
+        rsi_threshold = TECH_RSI_OVERSOLD.get(sub_sector, 30.0)
+        if rsi > rsi_threshold + 15:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"RSI {rsi:.1f} not oversold for {sub_sector} (need < {rsi_threshold + 15})"
+            )
+        rsi_floor = max(rsi_threshold - 10, 15.0)
+        if rsi < rsi_floor:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"RSI {rsi:.1f} in freefall — too risky"
+            )
+
+        # Volume check
+        volume_ratio = volume / avg_volume if avg_volume > 0 else 0.0
+        if volume_ratio < self.min_volume_ratio:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"Volume {volume_ratio:.1f}x too low (need {self.min_volume_ratio}x)"
+            )
+
+        # MACD histogram should be improving
+        macd_hist = macd - macd_signal
+        if macd_hist < -1.0:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"MACD histogram {macd_hist:.3f} — momentum still strongly negative"
+            )
+
+        # Calculate confidence
+        base_confidence = 0.55
+
+        # Support level proximity
+        if near_ema21 and abs(dist_to_ema21) < 1.0:
+            base_confidence += 0.10
+            support = "EMA_21"
+        elif near_sma50 and abs(dist_to_sma50) < 1.5:
+            base_confidence += 0.10
+            support = "SMA_50"
+        else:
+            support = "SMA_50/EMA_21"
+
+        # RSI depth
+        if rsi < rsi_threshold:
+            base_confidence += 0.10
+        elif rsi < rsi_threshold + 5:
+            base_confidence += 0.05
+
+        # MACD turning positive
+        if macd_hist > 0:
+            base_confidence += 0.05
+
+        # Volume surge (institutional buying)
+        if volume_ratio > 1.5:
+            base_confidence += 0.05
+
+        # Memory stocks get slight penalty (most volatile)
+        if sub_sector == "memory":
+            base_confidence -= 0.05
+
+        # Seasonal boost: Q1 (capex orders) + Q4 (year-end)
+        current_month = context.timestamp.month
+        strong_months = TECH_SEASONAL_STRENGTH.get(sub_sector, [])
+        if current_month in strong_months:
+            base_confidence += 0.05
+
+        confidence = max(min(base_confidence, 0.85), 0.40)
+
+        return RuleResult(
+            triggered=True,
+            signal=SignalType.BUY,
+            confidence=confidence,
+            reasoning=(
+                f"SEMI CYCLE: {context.symbol} ({sub_sector}) pullback to {support} "
+                f"in confirmed uptrend cycle. SMA_50/SMA_200 golden cross. "
+                f"RSI={rsi:.1f}, ADX={adx:.1f}, MACD_H={macd_hist:.3f}, "
+                f"Volume={volume_ratio:.1f}x"
+            ),
+            contributing_factors={
+                "sub_sector": sub_sector,
+                "support_level": support,
+                "dist_to_sma50_pct": round(dist_to_sma50, 2),
+                "dist_to_ema21_pct": round(dist_to_ema21, 2),
+                "RSI_14": round(rsi, 1),
+                "ADX_14": round(adx, 1),
+                "MACD_HISTOGRAM": round(macd_hist, 3),
+                "volume_ratio": round(volume_ratio, 2),
             }
         )
 

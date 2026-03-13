@@ -280,6 +280,213 @@ class FinancialMeanReversionRule(Rule):
         )
 
 
+class FinancialPullbackRule(Rule):
+    """
+    Buy financial stocks on pullback to SMA_50 support in a confirmed uptrend.
+
+    Financials (especially banks and payment networks) pull back to SMA_50
+    reliably in bull markets. Banks are interest-rate sensitive — when the
+    yield curve steepens, pullbacks to support are high-conviction entries.
+    Payment networks (V, MA) are secular growth — they pull back to shorter
+    MAs (EMA_21) like tech stocks.
+
+    Key insights:
+    1. Banks (JPM, GS) pull back to SMA_50 in 2-4 week cycles
+    2. Payment networks (V, MA) pull back to EMA_21 in shorter cycles
+    3. Investment banks (GS, MS) have higher vol — use wider tolerance
+    4. Insurance (BRK.B, CB, PGR) is low-beta — tight pullbacks to SMA_20
+
+    Detection:
+    - Price within 2-3% of SMA_50 (or EMA_21 for payments)
+    - SMA_50 > SMA_200 (golden cross)
+    - RSI 35-55 (pulling back, not collapsing)
+    - MACD histogram improving (momentum turning)
+    - Volume >= 60% of average (institutional activity)
+
+    Skips fintech (SOFI, NU, SQ) — too volatile for pullback plays.
+    """
+
+    def __init__(
+        self,
+        pullback_tolerance_pct: float = 3.0,
+        min_volume_ratio: float = 0.6,
+    ):
+        self.pullback_tolerance_pct = pullback_tolerance_pct
+        self.min_volume_ratio = min_volume_ratio
+
+    @property
+    def name(self) -> str:
+        return "Financial Pullback"
+
+    @property
+    def description(self) -> str:
+        return "Buy financial stocks on pullback to SMA_50 support in uptrend"
+
+    @property
+    def required_indicators(self) -> list:
+        return [
+            "RSI_14", "EMA_21", "SMA_20", "SMA_50", "SMA_200", "close",
+            "volume", "MACD_HISTOGRAM",
+        ]
+
+    def evaluate(self, context: SymbolContext) -> RuleResult:
+        sub_sector = FINANCIAL_SECTOR_MAP.get(context.symbol.upper())
+        if not sub_sector:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"{context.symbol} not in financial sector list"
+            )
+
+        # Skip fintech — too volatile for pullback strategy
+        if sub_sector in ("fintech",):
+            return RuleResult(
+                triggered=False,
+                reasoning=f"{context.symbol} is fintech — too volatile for pullback"
+            )
+
+        rsi = context.get_indicator("RSI_14")
+        ema21 = context.get_indicator("EMA_21")
+        sma20 = context.get_indicator("SMA_20")
+        sma50 = context.get_indicator("SMA_50")
+        sma200 = context.get_indicator("SMA_200")
+        close = context.get_indicator("close")
+        volume = context.get_indicator("volume")
+        avg_volume = context.get_indicator("volume_sma_20")
+        macd_hist = context.get_indicator("MACD_HISTOGRAM")
+
+        # Golden cross required
+        if sma50 <= sma200:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"No golden cross: SMA_50={sma50:.2f} <= SMA_200={sma200:.2f}"
+            )
+
+        # Determine support level by sub-sector
+        # Payments use EMA_21 (faster, like tech growth)
+        # Banks/insurance use SMA_50 (slower, more cyclical)
+        if sub_sector in ("payments", "financial_data"):
+            support_ma = ema21
+            support_name = "EMA_21"
+            tolerance = 2.0  # Tighter for low-vol payments
+        elif sub_sector in ("investment_bank",):
+            support_ma = sma50
+            support_name = "SMA_50"
+            tolerance = self.pullback_tolerance_pct + 1.0  # Wider for volatile I-banks
+        else:
+            support_ma = sma50
+            support_name = "SMA_50"
+            tolerance = self.pullback_tolerance_pct
+
+        # Price must be near support MA
+        if support_ma > 0:
+            dist_to_support = (close - support_ma) / support_ma * 100
+        else:
+            return RuleResult(triggered=False, reasoning=f"{support_name} invalid")
+
+        if dist_to_support > tolerance:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"Price {dist_to_support:+.1f}% above {support_name} — not a pullback"
+            )
+        if dist_to_support < -(tolerance + 1.0):
+            return RuleResult(
+                triggered=False,
+                reasoning=f"Price {dist_to_support:+.1f}% below {support_name} — broken support"
+            )
+
+        # Price must be above SMA_200
+        if close < sma200:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"Price ${close:.2f} below SMA_200 ${sma200:.2f} — trend broken"
+            )
+
+        # RSI range (pulling back, not collapsing or overbought)
+        if rsi < 30:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"RSI {rsi:.1f} < 30 — too deep, use mean reversion rule"
+            )
+        if rsi > 60:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"RSI {rsi:.1f} > 60 — not a pullback"
+            )
+
+        # MACD histogram should be improving
+        if macd_hist < -0.5:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"MACD histogram {macd_hist:.3f} — momentum still declining"
+            )
+
+        # Volume check
+        volume_ratio = volume / avg_volume if avg_volume > 0 else 0.0
+        if volume_ratio < self.min_volume_ratio:
+            return RuleResult(
+                triggered=False,
+                reasoning=f"Volume {volume_ratio:.1f}x too low (need {self.min_volume_ratio}x)"
+            )
+
+        # Calculate confidence
+        base_confidence = 0.55
+
+        # Proximity to support
+        if abs(dist_to_support) < 1.0:
+            base_confidence += 0.10
+        elif abs(dist_to_support) < 2.0:
+            base_confidence += 0.05
+
+        # RSI sweet spot (40-50 = controlled pullback)
+        if 38 <= rsi <= 50:
+            base_confidence += 0.05
+
+        # MACD turning positive
+        if macd_hist > 0:
+            base_confidence += 0.05
+
+        # Volume surge on pullback (institutional buying)
+        if volume_ratio > 1.3:
+            base_confidence += 0.05
+
+        # SMA_20 still above SMA_50 (short-term trend intact)
+        if sma20 > sma50:
+            base_confidence += 0.05
+
+        # Sub-sector adjustments
+        if sub_sector in ("payments", "financial_data"):
+            base_confidence += 0.05  # Higher conviction for secular growth
+        elif sub_sector == "investment_bank":
+            base_confidence -= 0.03  # Slight penalty for vol
+
+        # Seasonal boost
+        current_month = context.timestamp.month
+        strong_months = FINANCIAL_SEASONAL_STRENGTH.get(sub_sector, [])
+        if current_month in strong_months:
+            base_confidence += 0.05
+
+        confidence = max(min(base_confidence, 0.85), 0.40)
+
+        return RuleResult(
+            triggered=True,
+            signal=SignalType.BUY,
+            confidence=confidence,
+            reasoning=(
+                f"FINANCIAL PULLBACK: {context.symbol} ({sub_sector}) at {support_name} "
+                f"support ({dist_to_support:+.1f}%). RSI={rsi:.1f}, "
+                f"MACD_H={macd_hist:.3f}. Golden cross intact."
+            ),
+            contributing_factors={
+                "sub_sector": sub_sector,
+                "support_level": support_name,
+                "distance_from_support_pct": round(dist_to_support, 2),
+                "RSI_14": round(rsi, 1),
+                "MACD_HISTOGRAM": round(macd_hist, 3),
+                "volume_ratio": round(volume_ratio, 2),
+            }
+        )
+
+
 class FinancialSeasonalityRule(Rule):
     """
     Adjust signals based on seasonal patterns in financial stocks.

@@ -47,6 +47,9 @@ INDUSTRIAL_SECTOR_MAP = {
     "GE": "aerospace",          # GE Aerospace — beta 1.2, jet engines, aftermarket
     "TXT": "aerospace",         # Textron — beta 1.1, aviation/defense/industrial
 
+    # Infrastructure engineering
+    "WLDN": "electrical",       # Willdan Group — beta ~1.1, infrastructure engineering + energy services
+
     # Sector ETFs
     "XLI": "industrial_etf",    # Industrial Select Sector SPDR
 }

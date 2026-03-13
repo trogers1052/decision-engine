@@ -36,6 +36,7 @@ from .mining_rules import (
 )
 from .financial_rules import (
     FinancialMeanReversionRule,
+    FinancialPullbackRule,
     FinancialSeasonalityRule,
 )
 from .energy_rules import (
@@ -48,11 +49,13 @@ from .tech_rules import (
     TechEMAPullbackRule,
     TechMeanReversionRule,
     TechSeasonalityRule,
+    SemiCycleRule,
 )
 from .utility_rules import (
     UtilityMeanReversionRule,
     UtilityRateReversionRule,
     UtilitySeasonalityRule,
+    NuclearPowerMomentumRule,
 )
 from .consumer_staples_rules import (
     ConsumerStaplesMeanReversionRule,
@@ -68,6 +71,12 @@ from .industrial_rules import (
     IndustrialMeanReversionRule,
     IndustrialPullbackRule,
     IndustrialSeasonalityRule,
+)
+from .defense_rules import (
+    DefenseBudgetCycleRule,
+    DefenseMeanReversionRule,
+    DefenseMomentumRule,
+    DefenseCounterCyclicalRule,
 )
 
 logger = logging.getLogger(__name__)
@@ -113,6 +122,7 @@ RULE_REGISTRY: Dict[str, Type[Rule]] = {
 
     # Financial Sector Rules
     "financial_mean_reversion": FinancialMeanReversionRule,
+    "financial_pullback": FinancialPullbackRule,
     "financial_seasonality": FinancialSeasonalityRule,
 
     # Energy Sector Rules
@@ -125,11 +135,13 @@ RULE_REGISTRY: Dict[str, Type[Rule]] = {
     "tech_ema_pullback": TechEMAPullbackRule,
     "tech_mean_reversion": TechMeanReversionRule,
     "tech_seasonality": TechSeasonalityRule,
+    "semi_cycle": SemiCycleRule,
 
     # Utility Sector Rules
     "utility_mean_reversion": UtilityMeanReversionRule,
     "utility_rate_reversion": UtilityRateReversionRule,
     "utility_seasonality": UtilitySeasonalityRule,
+    "nuclear_power_momentum": NuclearPowerMomentumRule,
 
     # Consumer Staples Sector Rules
     "consumer_staples_mean_reversion": ConsumerStaplesMeanReversionRule,
@@ -145,6 +157,12 @@ RULE_REGISTRY: Dict[str, Type[Rule]] = {
     "industrial_mean_reversion": IndustrialMeanReversionRule,
     "industrial_pullback": IndustrialPullbackRule,
     "industrial_seasonality": IndustrialSeasonalityRule,
+
+    # Defense/Aerospace Sector Rules
+    "defense_budget_cycle": DefenseBudgetCycleRule,
+    "defense_mean_reversion": DefenseMeanReversionRule,
+    "defense_momentum": DefenseMomentumRule,
+    "defense_counter_cyclical": DefenseCounterCyclicalRule,
 }
 
 
