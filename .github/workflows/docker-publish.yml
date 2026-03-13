@@ -19,10 +19,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Checkout risk-engine
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: trogers1052/risk-engine
           path: risk-engine
