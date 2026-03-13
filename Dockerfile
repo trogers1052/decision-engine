@@ -9,6 +9,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Create non-root user
+RUN adduser --disabled-password --gecos "" appuser
+
 # Install risk-engine from local source first (it's a dependency)
 COPY risk-engine/ /tmp/risk-engine/
 RUN pip install --no-cache-dir /tmp/risk-engine/ && rm -rf /tmp/risk-engine/
@@ -24,6 +27,9 @@ COPY config/ /app/config/
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+
+RUN chown -R appuser:appuser /app
+USER appuser
 
 # Run the service
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=15s \
