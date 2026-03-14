@@ -978,10 +978,55 @@ class DecisionEngineService:
         if len(all_signals) < 2:
             return
 
-        # Rank BUY signals
-        buy_ranking = self.ranker.rank(all_signals, SignalType.BUY)
-        if buy_ranking.ranked_symbols:
-            self.producer.publish_ranking(buy_ranking)
+        # Risk gate: suppress BUY rankings under the same conditions
+        # that suppress individual BUY signals.
+        buy_suppressed = False
+
+        if (
+            self.daily_loss_monitor
+            and self.daily_loss_monitor.is_halted()
+        ):
+            m.SIGNALS_REJECTED.labels(reason="ranking_daily_loss").inc()
+            logger.warning("Rankings: suppressing BUY ranking — daily loss circuit breaker")
+            buy_suppressed = True
+
+        if (
+            not buy_suppressed
+            and self.market_context_reader
+            and self.market_context_reader.is_stale()
+        ):
+            m.SIGNALS_REJECTED.labels(reason="ranking_stale_context").inc()
+            staleness_min = (self.market_context_reader.get_staleness_seconds() or 0) / 60
+            logger.warning(
+                f"Rankings: suppressing BUY ranking — context {staleness_min:.0f}min old"
+            )
+            buy_suppressed = True
+
+        if not buy_suppressed and self.portfolio_risk_reader:
+            pf_state = self.portfolio_risk_reader.get_state()
+            if pf_state is None:
+                m.SIGNALS_REJECTED.labels(reason="ranking_risk_gate").inc()
+                logger.warning("Rankings: suppressing BUY ranking — guardian state unavailable (fail-closed)")
+                buy_suppressed = True
+            elif pf_state.halted:
+                m.SIGNALS_REJECTED.labels(reason="ranking_risk_gate").inc()
+                logger.warning(f"Rankings: suppressing BUY ranking — {pf_state.halt_reason}")
+                buy_suppressed = True
+            else:
+                max_heat = self._config.get("portfolio_max_actual_heat", 0.10)
+                if pf_state.actual_portfolio_heat > max_heat:
+                    m.SIGNALS_REJECTED.labels(reason="ranking_risk_gate").inc()
+                    logger.warning(
+                        f"Rankings: suppressing BUY ranking — heat "
+                        f"{pf_state.actual_portfolio_heat:.1%} exceeds {max_heat:.0%}"
+                    )
+                    buy_suppressed = True
+
+        # Rank BUY signals (only if not suppressed by risk gates)
+        if not buy_suppressed:
+            buy_ranking = self.ranker.rank(all_signals, SignalType.BUY)
+            if buy_ranking.ranked_symbols:
+                self.producer.publish_ranking(buy_ranking)
 
         # Rank SELL signals (if any)
         sell_ranking = self.ranker.rank(all_signals, SignalType.SELL)
