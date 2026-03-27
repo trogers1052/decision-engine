@@ -10,7 +10,7 @@ python-dotenv==1.2.2
 PyYAML==6.0.3
 
 # Redis (for state persistence)
-redis==7.3.0
+redis==7.4.0
 
 # Database (optional, for decision logging)
 psycopg2-binary==2.9.11
