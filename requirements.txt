@@ -1,7 +1,7 @@
 # Decision Engine Dependencies (pinned to production versions)
 
 # Kafka
-kafka-python==2.3.0
+kafka-python==2.3.1
 
 # Configuration
 pydantic==2.12.5
