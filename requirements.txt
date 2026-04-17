@@ -4,7 +4,7 @@
 kafka-python==2.3.0
 
 # Configuration
-pydantic==2.12.5
+pydantic==2.13.2
 pydantic-settings==2.13.1
 python-dotenv==1.2.2
 PyYAML==6.0.3
